@@ -1,0 +1,44 @@
+version: '3'
+
+vars:
+  IMAGE_NAME: 'qthibeault/ros'
+  ROS_VERSION: 'humble'
+  IMAGE_TAG: '{{.IMAGE_NAME}}:{{.ROS_VERSION}}'
+  MOUNT_PATH: '/workspace'
+  RUN_CMD: 'run --mount "type=bind,src={{.ROOT_DIR}},dst={{.MOUNT_PATH}}" --workdir {{.MOUNT_PATH}}'
+
+tasks:
+  build-image:
+    cmds:
+      - docker build --build-arg USER_UID={{.USER_ID}} --tag {{.IMAGE_TAG}} $PWD
+    vars:
+      USER_ID:
+        sh: id -u $USERID
+    status:
+      - test -n "$(docker images -q {{.IMAGE_TAG}})"
+
+  build-detector:
+    deps: [build-image]
+    cmds:
+      - docker {{.RUN_CMD}} --rm {{.IMAGE_TAG}} colcon build --packages-select detector
+    sources:
+      - src/detector/detector/*.py
+    generates:
+      - build/detector/build/lib/detector/*.py
+
+  build-predictor:
+    deps: [build-image]
+    cmds:
+      - docker {{.RUN_CMD}} --rm {{.IMAGE_TAG}} colcon build --packages-select predictor
+    sources:
+      - src/predictor/predictor/*.py
+    generates:
+      - build/predictor/build/lib/predictor/*.py
+
+  build-modules:
+    deps: [build-detector, build-predictor]
+
+  shell:
+    deps: [build-image]
+    cmds:
+      - docker {{.RUN_CMD}} --rm --interactive --tty {{.IMAGE_TAG}} /bin/bash
