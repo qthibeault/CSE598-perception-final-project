@@ -1,0 +1,15 @@
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+src = [
+  "src/detector",
+  "src/predictor"
+]
+
+[tool.pyright]
+include = [
+  "src/detector/detector/",
+  "src/predictor/predictor/"
+]
+stubPath = "./stubs"
