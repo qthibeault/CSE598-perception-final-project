@@ -1,0 +1,13 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+
+[dev-packages]
+detector = {editable = true, path = "./src/detector"}
+predictor = {editable = true, path = "./src/predictor"}
+
+[requires]
+python_version = "3.10"
