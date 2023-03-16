@@ -42,3 +42,8 @@ tasks:
     deps: [build-image]
     cmds:
       - docker {{.RUN_CMD}} --rm --interactive --tty {{.IMAGE_TAG}} /bin/bash
+
+  check:
+    cmds:
+      - mypy
+      - black --check src/detector/detector src/predictor/predictor stubs
