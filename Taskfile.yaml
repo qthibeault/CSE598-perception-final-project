@@ -6,9 +6,12 @@ vars:
   IMAGE_TAG: '{{.IMAGE_NAME}}:{{.ROS_VERSION}}'
   MOUNT_PATH: '/workspace'
   RUN_CMD: 'run --mount "type=bind,src={{.ROOT_DIR}},dst={{.MOUNT_PATH}}" --workdir {{.MOUNT_PATH}}'
+  UID_GID:
+    sh: stat -c "%u:%g" {{.ROOT_DIR}}/Dockerfile
 
 tasks:
   build-image:
+    run: once
     cmds:
       - docker build --build-arg USER_UID={{.USER_ID}} --tag {{.IMAGE_TAG}} $PWD
     vars:
@@ -20,7 +23,7 @@ tasks:
   build-detector:
     deps: [build-image]
     cmds:
-      - docker {{.RUN_CMD}} --rm {{.IMAGE_TAG}} colcon build --packages-select detector
+      - docker {{.RUN_CMD}} --rm --user "{{.UID_GID}}" {{.IMAGE_TAG}} colcon build --packages-select detector
     sources:
       - src/detector/detector/*.py
     generates:
@@ -29,7 +32,7 @@ tasks:
   build-predictor:
     deps: [build-image]
     cmds:
-      - docker {{.RUN_CMD}} --rm {{.IMAGE_TAG}} colcon build --packages-select predictor
+      - docker {{.RUN_CMD}} --rm --user "{{.UID_GID}}" {{.IMAGE_TAG}} colcon build --packages-select predictor
     sources:
       - src/predictor/predictor/*.py
     generates:
