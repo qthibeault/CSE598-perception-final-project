@@ -1,0 +1,3 @@
+class String:
+    @property
+    def data(self) -> str: ...
