@@ -6,7 +6,7 @@ src = ["src/detector", "src/predictor"]
 
 [tool.pyright]
 include = ["./src/detector/detector", "./src/predictor/predictor"]
-stubPath = "./stubs"
+# stubPath = "./stubs"
 
 [tool.mypy]
 mypy_path = "stubs"
