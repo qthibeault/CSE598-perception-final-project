@@ -46,7 +46,8 @@ tasks:
     cmds:
       - docker {{.RUN_CMD}} --rm --interactive --tty {{.IMAGE_TAG}} /bin/bash
 
-  check:
+  clean-image:
     cmds:
-      - mypy
-      - black --check src/detector/detector src/predictor/predictor stubs
+      - docker image rm {{.IMAGE_TAG}}
+    preconditions:
+      - test -n "$(docker images -q {{.IMAGE_TAG}})"
