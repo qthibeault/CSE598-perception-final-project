@@ -1,9 +1,0 @@
-from typing import Optional, List
-
-from .context import Context
-from .node import Node
-from .executors import Executor
-
-def init(*, args: Optional[List[str]] = ..., context: Optional[Context] = ...) -> None: ...
-def spin(node: Node, exector: Optional[Executor] = ...) -> None: ...
-def shutdown(*, context: Optional[Context] = ...) -> None: ...
