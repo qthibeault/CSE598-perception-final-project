@@ -1,12 +1,20 @@
 [tool.black]
-line-length = 100
+line-length = 120
 
 [tool.ruff]
 src = ["src/detector", "src/predictor"]
+select = ["F", "E", "I", "ANN", "B", "A", "COM", "C4", "SIM", "TCH"]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.flake8-annotations]
+mypy-init-return = true
+suppress-none-returning = true
 
 [tool.pyright]
-include = ["./src/detector/detector", "./src/predictor/predictor"]
-# stubPath = "./stubs"
+include = ["src/detector/detector", "src/predictor/predictor"]
+pythonVersion = "3.10"
+pythonPlatform = "Linux"
 
 [tool.mypy]
 mypy_path = "stubs"
