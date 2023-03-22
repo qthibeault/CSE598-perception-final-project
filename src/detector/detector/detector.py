@@ -17,8 +17,8 @@ class Detector(Node):
 
         self._bridge = CvBridge()
         self._model = maskrcnn_resnet50_fpn_v2(weights=MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT)
-        self._x_publisher = self.create_publisher(Image, "object/pos_x", 10)
-        self._y_publisher = self.create_publisher(Image, "object/pos_y", 10)
+        self._x_publisher = self.create_publisher(Float64, "object/pos_x", 10)
+        self._y_publisher = self.create_publisher(Float64, "object/pos_y", 10)
         self._subscription = self.create_subscription(Image, "camera", self.on_message, 10)
         self._last_frame = None
 
