@@ -15,6 +15,7 @@ suppress-none-returning = true
 include = ["src/detector/detector", "src/predictor/predictor"]
 pythonVersion = "3.10"
 pythonPlatform = "Linux"
+extraPaths = ["vendor/rclpy/rclpy"]
 
 [tool.mypy]
 mypy_path = "stubs"
