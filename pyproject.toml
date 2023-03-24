@@ -12,12 +12,15 @@ mypy-init-return = true
 suppress-none-returning = true
 
 [tool.pyright]
-include = ["src/detector/detector", "src/predictor/predictor"]
+include = [
+    "./src/detector/detector",
+    "./src/predictor/predictor",
+    "./src/converter/converter"
+]
 pythonVersion = "3.10"
 pythonPlatform = "Linux"
-extraPaths = ["vendor/rclpy/rclpy"]
+extraPaths = ["./vendor/rclpy/rclpy"]
+stubPath = "./src/stubs"
 
-[tool.mypy]
-mypy_path = "stubs"
-files = ["src/detector/detector", "src/predictor/predictor"]
-strict = true
+reportMissingModuleSource = false
+reportMissingTypeStubs = true
