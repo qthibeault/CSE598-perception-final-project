@@ -1,68 +1,48 @@
 version: '3'
 
 vars:
-  IMAGE_NAME: 'qthibeault/ros'
-  ROS_VERSION: 'humble'
-  IMAGE_TAG: '{{.IMAGE_NAME}}:{{.ROS_VERSION}}'
-  MOUNT_PATH: '/workspace'
-  RUN_CMD: 'run --mount "type=bind,src={{.ROOT_DIR}},dst={{.MOUNT_PATH}}" --workdir {{.MOUNT_PATH}}'
-  BUILD_CMD: '{{.RUN_CMD}} --rm --user {{.UID_GID}} {{.IMAGE_TAG}} colcon build --packages-select'
+  SERVICE_NAME: 'ros'
   UID_GID:
     sh: stat -c "%u:%g" {{.ROOT_DIR}}/Dockerfile
+  BUILD_CMD: 'docker compose run --rm --user {{.UID_GID}} {{.SERVICE_NAME}} colcon build --packages-select'
 
 tasks:
-  build-image:
-    run: once
-    cmds:
-      - docker build --tag {{.IMAGE_TAG}} $PWD
-    vars:
-      USER_ID:
-        sh: id -u $USERID
-    status:
-      - test -n "$(docker images -q {{.IMAGE_TAG}})"
-
   setup:
-    run: once
-    depends: [build-image]
     cmds:
+      - docker compose build {{.SERVICE_NAME}}
       - git submodule update --init --recursive
       - pipenv install
 
   build-detector:
-    deps: [build-image]
     cmds:
-      - docker {{.BUILD_CMD}} detector
+      - '{{.BUILD_CMD}} detector'
     sources:
       - src/detector/detector/*.py
     generates:
       - build/detector/build/lib/detector/*.py
 
   build-predictor:
-    deps: [build-image]
     cmds:
-      - docker {{.BUILD_CMD}} predictor
+      - '{{.BUILD_CMD}} predictor'
     sources:
       - src/predictor/predictor/*.py
     generates:
       - build/predictor/build/lib/predictor/*.py
 
   build-all:
-    deps: [build-detector, build-predictor]
-
-  shell:
-    deps: [build-image]
-    cmds:
-      - docker {{.RUN_CMD}} --rm --interactive --tty {{.IMAGE_TAG}} /bin/bash
+    deps:
+      - build-detector
+      - build-predictor
 
   clean-image:
     cmds:
-      - docker image rm {{.IMAGE_TAG}}
-    preconditions:
-      - test -n "$(docker images -q {{.IMAGE_TAG}})"
+      - docker compose down --rmi all --remove-orphans
 
   clean-build:
     cmds:
       - rm -rf ./build ./install ./log
 
   clean-all:
-    deps: [clean-image, clean-build]
+    deps:
+      - clean-image
+      - clean-build
