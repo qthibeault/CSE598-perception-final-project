@@ -6,6 +6,7 @@ vars:
   IMAGE_TAG: '{{.IMAGE_NAME}}:{{.ROS_VERSION}}'
   MOUNT_PATH: '/workspace'
   RUN_CMD: 'run --mount "type=bind,src={{.ROOT_DIR}},dst={{.MOUNT_PATH}}" --workdir {{.MOUNT_PATH}}'
+  BUILD_CMD: '{{.RUN_CMD}} --rm --user {{.UID_GID}} {{.IMAGE_TAG}} colcon build --packages-select'
   UID_GID:
     sh: stat -c "%u:%g" {{.ROOT_DIR}}/Dockerfile
 
@@ -23,7 +24,7 @@ tasks:
   build-detector:
     deps: [build-image]
     cmds:
-      - docker {{.RUN_CMD}} --rm --user "{{.UID_GID}}" {{.IMAGE_TAG}} colcon build --packages-select detector
+      - docker {{.BUILD_CMD}} detector
     sources:
       - src/detector/detector/*.py
     generates:
@@ -32,7 +33,7 @@ tasks:
   build-predictor:
     deps: [build-image]
     cmds:
-      - docker {{.RUN_CMD}} --rm --user "{{.UID_GID}}" {{.IMAGE_TAG}} colcon build --packages-select predictor
+      - docker {{.BUILD_CMD}} predictor
     sources:
       - src/predictor/predictor/*.py
     generates:
