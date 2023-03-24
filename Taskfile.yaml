@@ -14,7 +14,7 @@ tasks:
   build-image:
     run: once
     cmds:
-      - docker build --build-arg USER_UID={{.USER_ID}} --tag {{.IMAGE_TAG}} $PWD
+      - docker build --tag {{.IMAGE_TAG}} $PWD
     vars:
       USER_ID:
         sh: id -u $USERID
