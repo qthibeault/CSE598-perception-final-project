@@ -46,7 +46,7 @@ tasks:
     generates:
       - build/predictor/build/lib/predictor/*.py
 
-  build-modules:
+  build-all:
     deps: [build-detector, build-predictor]
 
   shell:
