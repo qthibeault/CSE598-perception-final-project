@@ -59,3 +59,10 @@ tasks:
       - docker image rm {{.IMAGE_TAG}}
     preconditions:
       - test -n "$(docker images -q {{.IMAGE_TAG}})"
+
+  clean-build:
+    cmds:
+      - rm -rf ./build ./install ./log
+
+  clean-all:
+    deps: [clean-image, clean-build]
