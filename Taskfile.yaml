@@ -21,6 +21,13 @@ tasks:
     status:
       - test -n "$(docker images -q {{.IMAGE_TAG}})"
 
+  setup:
+    run: once
+    depends: [build-image]
+    cmds:
+      - git submodule update --init --recursive
+      - pipenv install
+
   build-detector:
     deps: [build-image]
     cmds:
