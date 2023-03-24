@@ -39,7 +39,7 @@ class Detector(Node):
         self._y_publisher.publish(y_msg)
 
     def _identify(self, image: cv2.Mat) -> tuple[float, float]:
-        batch = MaskRCNN_ResNet50_FPN_V2_Weights.transforms(image).unsqueeze(0)  # type: ignore
+        batch = MaskRCNN_ResNet50_FPN_V2_Weights.transforms(image).unsqueeze(0)
         results = self._model(batch)
 
         for result in results:
