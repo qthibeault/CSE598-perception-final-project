@@ -1,0 +1,10 @@
+#!/bin/bash
+# Play a recording using the converter module
+
+set -e
+
+source /opt/ros/humble/setup.bash
+source /workspace/install/setup.bash
+
+echo "====> Converting video $1"
+ros2 run converter play --ros-args --log-level debug -p "video:=$1"

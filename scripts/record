@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+source /opt/ros/humble/setup.bash
+
+outname=$(basename $1 | sed "s/\..\+$//")
+outpath="recordings/$outname"
+
+shift
+
+echo "=====> Recording topics [$@] to rosbag $outpath"
+
+ros2 bag record --output $outpath $@
