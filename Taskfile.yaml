@@ -13,9 +13,11 @@ vars:
 tasks:
   setup:
     cmds:
-      - docker compose build {{.SERVICE_NAME}}
-      - git submodule update --init --recursive
-      - pipenv install
+      - 'docker compose build {{.SERVICE_NAME}}'
+      - 'git submodule update --init --recursive'
+      - 'pipenv install'
+    env:
+      PIPENV_VENV_IN_PROJECT: 1
 
   build-detector:
     cmds:
