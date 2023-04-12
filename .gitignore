@@ -4,4 +4,5 @@ build/
 install/
 log/
 *.egg-info/
-recordings/baseline/
+recordings/*
+!recordings/baseline.mp4
