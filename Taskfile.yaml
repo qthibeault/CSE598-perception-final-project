@@ -2,9 +2,13 @@ version: '3'
 
 vars:
   SERVICE_NAME: 'ros'
-  UID_GID:
-    sh: stat -c "%u:%g" {{.ROOT_DIR}}/Dockerfile
-  BUILD_CMD: 'docker compose run --rm --user {{.UID_GID}} {{.SERVICE_NAME}} colcon build --packages-select'
+  UID:
+    sh: id --user
+  GID:
+    sh: id --group
+  UID_GID: '{{.UID}}:{{.GID}}'
+  RUN_CMD: 'docker compose run --user "{{.UID_GID}}"'
+  BUILD_CMD: '{{.RUN_CMD}} --rm {{.SERVICE_NAME}} colcon build --packages-select'
 
 tasks:
   setup:
