@@ -29,10 +29,19 @@ tasks:
     generates:
       - build/predictor/build/lib/predictor/*.py
 
+  build-converter:
+    cmds:
+      - '{{.BUILD_CMD}} converter'
+    sources:
+      - src/converter/converter/*.py
+    generates:
+      - build/converter/build/lib/converter/*.py
+
   build-all:
     deps:
       - build-detector
       - build-predictor
+      - build-converter
 
   clean-image:
     cmds:
