@@ -30,6 +30,8 @@ tasks:
     cmds:
       - '{{.BUILD_CMD}} detector'
     sources:
+      - src/detector/setup.*
+      - src/detector/package.xml
       - src/detector/detector/*.py
     generates:
       - build/detector/build/lib/detector/*.py
@@ -38,6 +40,8 @@ tasks:
     cmds:
       - '{{.BUILD_CMD}} predictor'
     sources:
+      - src/predictor/setup.*
+      - src/predictor/package.xml
       - src/predictor/predictor/*.py
     generates:
       - build/predictor/build/lib/predictor/*.py
@@ -46,6 +50,8 @@ tasks:
     cmds:
       - '{{.BUILD_CMD}} converter'
     sources:
+      - src/converter/setup.*
+      - src/converter/package.xml
       - src/converter/converter/*.py
     generates:
       - build/converter/build/lib/converter/*.py
