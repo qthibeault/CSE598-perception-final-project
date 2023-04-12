@@ -12,6 +12,13 @@ vars:
 
 tasks:
   setup:
+    summary: |
+      Steps for initializing the directory for development
+
+      This task
+        - Builds the docker image used for compiling and running ROS modules
+        - Pulls the git submodules necessary for type-hints
+        - Installs python dependencies using Pipenv
     cmds:
       - 'docker compose build {{.SERVICE_NAME}}'
       - 'git submodule update --init --recursive'
@@ -44,6 +51,7 @@ tasks:
       - build/converter/build/lib/converter/*.py
 
   build:
+    summary: 'Build all the ROS modules of this project'
     deps:
       - build-detector
       - build-predictor
