@@ -63,6 +63,19 @@ tasks:
       - build-predictor
       - build-converter
 
+  convert:
+    summary: 'Convert a given video into a rosbag'
+    deps:
+      - build-converter
+    cmds:
+      - docker compose up --detach {{.SERVICE_NAME}}
+      - defer: 'docker compose down'
+      - docker compose exec --detach {{.SERVICE_NAME}} scripts/record {{.FILE}} images
+      - docker compose exec {{.SERVICE_NAME}} scripts/play {{.FILE}}
+      - docker compose exec {{.SERVICE_NAME}} chown -R {{.UID_GID}} recordings
+    vars:
+      FILE: 'recordings/baseline.mp4'
+
   clean-image:
     cmds:
       - docker compose down --rmi all --remove-orphans
