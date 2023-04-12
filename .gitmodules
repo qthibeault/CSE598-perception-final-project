@@ -1,4 +1,0 @@
-[submodule "vendor/rclpy"]
-	path = vendor/rclpy
-	url = https://github.com/ros2/rclpy
-	branch = humble
