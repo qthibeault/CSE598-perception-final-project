@@ -43,7 +43,7 @@ tasks:
     generates:
       - build/converter/build/lib/converter/*.py
 
-  build-all:
+  build:
     deps:
       - build-detector
       - build-predictor
