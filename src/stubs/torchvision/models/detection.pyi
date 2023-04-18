@@ -1,4 +1,4 @@
-from typing import Any, Callable, Optional, Protocol, TypedDict, overload
+from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol, TypedDict, overload
 
 from torch import FloatTensor, Int64Tensor, Tensor, UInt8Tensor, Weights
 
@@ -13,14 +13,18 @@ class MaskRCNN_ResNet50_FPN_V2_Weights:
     COCO_V1: Weights
     transforms: Callable[[Any], Tensor]
 
-class _Output(TypedDict):
-    boxes: FloatTensor
-    labels: Int64Tensor
-    scores: Tensor
-    masks: UInt8Tensor
+if TYPE_CHECKING:
+    class MaskRCNNResult(TypedDict):
+        boxes: FloatTensor
+        labels: Int64Tensor
+        scores: Tensor
+        masks: UInt8Tensor
 
 class MaskRCNN:
     def eval(self): ...
-    def __call__(self, images: list[Tensor] | Tensor) -> list[_Output]: ...
+    def __call__(self, images: list[Tensor] | Tensor) -> list[MaskRCNNResult]: ...
 
-def maskrcnn_resnet50_fpn_v2(weights: Optional[Weights] = ..., progress: bool = ...) -> MaskRCNN: ...
+def maskrcnn_resnet50_fpn_v2(
+    weights: Optional[Weights] = ...,
+    progress: bool = ...,
+) -> MaskRCNN: ...
