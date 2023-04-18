@@ -2,8 +2,9 @@
 line-length = 100
 
 [tool.ruff]
-src = ["src/detector", "src/predictor"]
+src = ["src/**/*.py"]
 select = ["F", "E", "I", "ANN", "B", "A", "COM", "C4", "SIM", "TCH"]
+ignore = ["ANN101"]
 line-length = 100
 target-version = "py310"
 
@@ -12,7 +13,7 @@ mypy-init-return = true
 suppress-none-returning = true
 
 [tool.pyright]
-include = ["./src/finalproject/"]
+include = ["src/**/*.py"]
 pythonVersion = "3.10"
 pythonPlatform = "Linux"
 stubPath = "./src/stubs"
