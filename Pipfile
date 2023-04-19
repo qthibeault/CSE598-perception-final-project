@@ -12,10 +12,12 @@ scipy = "*"
 typing-extensions = "*"
 sympy = "*"
 numpy = "*"
+filterpy = "==1.4.5"
 
 [dev-packages]
 ruff = "*"
 black = "*"
+pandas = "*"
 
 [scripts]
 final-project = "python3 src/main.py"
