@@ -8,6 +8,8 @@ from uuid import UUID, uuid4
 import click
 import cv2
 import torchvision.models.detection as models
+from PIL import Image
+from sympy import solve, symbols
 
 if TYPE_CHECKING:
     import torch
@@ -18,6 +20,9 @@ if TYPE_CHECKING:
 class Point:
     x: float
     y: float
+
+    def as_tuple(self) -> tuple[float, float]:
+        return (self.x, self.y)
 
 
 @dataclass(frozen=True)
@@ -71,6 +76,14 @@ class BBox:
 
         return inter_area / union_area
 
+    def draw(self, img: cv2.Mat):
+        start = (self.x[0], self.y[0])
+        end = (self.x[1], self.y[1])
+        color = (255, 0, 0)
+        thickness = 2
+
+        cv2.rectangle(img, start, end, color, thickness)
+
     @classmethod
     def from_center(cls: Type[Self], pt: Point, width: float, height: float) -> Self:
         """Create a bounding box from a center-point."""
@@ -97,9 +110,8 @@ class Object:
     def advance(self, bbox: BBox) -> Object:
         return Object(bbox, [self.bbox] + self.history)
 
-
-class Trajectory:
-    pass
+    def draw(self, img: cv2.Mat):
+        self.bbox.draw(img)
 
 
 def load_frames(capture: cv2.VideoCapture) -> Iterator[cv2.Mat]:
@@ -144,8 +156,11 @@ class Predictor(Protocol):
     def __call__(self, target: BBox) -> BBox:
         ...
 
+    def draw(self, img: cv2.Mat) -> None:
+        ...
 
-@dataclass()
+
+@dataclass(frozen=True)
 class PLine:
     """Parametric line."""
 
@@ -157,23 +172,57 @@ class PLine:
         return Point(self.delta_x * t + self.bias.x, self.delta_y * t + self.bias.y)
 
     def closest_point(self, point: Point) -> Point:
-        """The point on the line closest to the given point."""
+        """The point on the line closest to the given point.
 
-        return Point(0, 0)
+        We can compute any point P on a parametric line L using the formula
+        `(x0, y0) + (x2 - x1, y2 - y1) * t`. We can define the line from any point P on line L to
+        the target point Q as `P - Q`. The line from the closest point P* on line L to the target
+        point Q will be perpendicular. Therefore, the dot product between the line `P - Q` and the
+        line L will be 0. Given this, we can formulate the equation for the closest point P* in
+        terms of parametric variable `t` as
+        `(x0 + (x2 - x1) * t - Rx) * (x2 - x1) + (y0 + (y2 - y1) * t - Ry) * (y2 - y1) = 0`.
+        """
+
+        t = symbols("t")
+        x_eq = self.delta_x * t + self.bias.x
+        y_eq = self.delta_y * t + self.bias.y
+
+        x_perp_eq = x_eq - point.x
+        y_perp_eq = y_eq - point.y
+        dot_prod = x_perp_eq * self.delta_x + y_perp_eq * self.delta_y
+
+        sol = solve(dot_prod, dict=True)
+
+        return self(sol["t"])
 
     @classmethod
     def from_points(cls: Type[Self], p1: Point, p2: Point) -> Self:
         return cls(p2.x - p1.x, p2.y - p1.y, p1)
 
 
-def _predict_linear(bbox: BBox, history: list[Point]) -> Predictor:
-    line = PLine.from_points(bbox.center, history[0])
+@dataclass(frozen=True)
+class LinearPredictor(Predictor):
+    line: PLine
+    width: float
+    height: float
 
-    def _predictor(target: BBox) -> BBox:
-        pt = line.closest_point(target.center)
-        return BBox.from_center(pt, bbox.width, bbox.height)
+    def __call__(self, target: BBox) -> BBox:
+        pt = self.line.closest_point(target.center)
+        return BBox.from_center(pt, self.width, self.height)
 
-    return _predictor
+    def draw(self, img: cv2.Mat):
+        p1 = self.line(0).as_tuple()
+        p2 = self.line(1).as_tuple()
+        p3 = self.line(100).as_tuple()
+
+        cv2.circle(img, p1, radius=0, color=(0, 0, 255), thickness=-1)
+        cv2.circle(img, p2, radius=0, color=(0, 0, 255), thickness=-1)
+        cv2.line(img, p1, p3, color=(0, 255, 0), thickness=2)
+
+
+def _predict_linear(curr_bbox: BBox, prev_centers: list[Point]) -> Predictor:
+    line = PLine.from_points(prev_centers[0], curr_bbox.center)
+    return LinearPredictor(line, curr_bbox.width, curr_bbox.height)
 
 
 def predict(obj: Object, method: str) -> Predictor:
@@ -186,8 +235,15 @@ def predict(obj: Object, method: str) -> Predictor:
     raise ValueError(f"Unknown interpolation method {method}")
 
 
-def track(objs: list[Object], bboxes: set[BBox], *, method: str, tol: float = 0.9) -> list[Object]:
+def track(
+    objs: Iterable[Object],
+    bboxes: set[BBox],
+    *,
+    method: str,
+    tol: float = 0.9,
+) -> tuple[list[Object], list[Predictor]]:
     tracked = []
+    predictors = []
 
     # For every object assign the best detection match as its new current position
     for obj in objs:
@@ -204,20 +260,48 @@ def track(objs: list[Object], bboxes: set[BBox], *, method: str, tol: float = 0.
             if future_iou > tol:
                 bboxes.remove(bbox)
                 tracked.append(obj.advance(bbox))
+                predictors.append(predictor)
 
     # Add the un-matched detections as new objects
     for bbox in bboxes:
         tracked.append(Object(bbox))
 
-    return tracked
+    return tracked, predictors
 
 
-def show(frame: cv2.Mat, objects: Objects, trajectories: Trajectories):
-    pass
+def show(
+    frame: cv2.Mat,
+    objects: Iterable[Object],
+    predictors: Iterable[Predictor],
+    *,
+    win_title: str = "Video",
+):
+    for obj in objects:
+        print(obj)
+        obj.draw(frame)
+
+    for predictor in predictors:
+        predictor.draw(frame)
+
+    cv2.imshow(win_title, frame)
 
 
-def write(frame: cv2.Mat, objects: Objects, trajectories: Trajectories, video: cv2.VideoWriter):
-    pass
+def write(
+    rec: cv2.VideoWriter,
+    frame: cv2.Mat,
+    objects: Iterable[Object],
+    predictors: Iterable[Predictor],
+    *,
+    should_draw: bool = False
+):
+    if should_draw:
+        for obj in objects:
+            obj.draw(frame)
+
+        for predictor in predictors:
+            predictor.draw(frame)
+
+    rec.write(frame)
 
 
 @click.command()
@@ -229,23 +313,24 @@ def write(frame: cv2.Mat, objects: Objects, trajectories: Trajectories, video: c
     help="Record prediction data into a video file",
 )
 @click.option(
-    "--interp",
+    "--method",
     type=click.Choice(["linear", "pchip", "spline"]),
     default="linear",
     show_default=True,
     help="The interpolation method to use",
 )
 @click.argument("video", type=click.Path(exists=True, dir_okay=False, path_type=Path))
-def run(video: Path, interp: str, no_show: bool, record: Optional[Path]):
-    weights = models.MaskRCNN_ResNet50_FPN_V2_Weights
-    model = models.maskrcnn_resnet50_fpn_v2(weights=weights.DEFAULT)
+def run(video: Path, method: str, no_show: bool, record: Optional[Path]):
+    weights = models.MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT
+    model = models.maskrcnn_resnet50_fpn_v2(weights=weights)
+    transforms = weights.transforms()
     model.eval()
 
     capture = cv2.VideoCapture(str(video))
     frames = load_frames(capture)
-
     first_frame = next(frames)
-    detections = detect(model, weights.transforms(first_frame))
+    transformed = transforms(Image.fromarray(first_frame))
+    detections = detect(model, transformed)
     objects = [Object(box) for box in detections]
 
     if record:
@@ -258,19 +343,21 @@ def run(video: Path, interp: str, no_show: bool, record: Optional[Path]):
         recording = None
 
     for frame in frames:
-        image = weights.transforms(frame)
-        detections = detect(model, image)
-        objects = track(objects, detections)
-        trajectories = predict(objects, interp)
+        transformed = transforms(Image.fromarray(frame))
+        detections = detect(model, transformed)
+        objects, predictors = track(objects, detections, method=method)
 
         if not no_show:
-            show(frame, objects, trajectories)
+            show(frame, objects, predictors)
 
         if recording:
-            write(frame, objects, trajectories, recording)
+            write(recording, frame, objects, predictors, should_draw=no_show)
 
     if recording:
-        recording.close()
+        recording.release()
+
+    if not no_show:
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
