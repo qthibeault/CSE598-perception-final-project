@@ -9,12 +9,17 @@ class _Transforms(Protocol):
     @overload
     def __call__(self, img: object) -> Tensor: ...
 
+if TYPE_CHECKING:
+    class MetaDict(TypedDict):
+        categories: list[str]
 
 class MaskRCNN_ResNet50_FPN_V2_Weights(Enum, Weights):
     DEFAULT = ...
     COCO_V1 = ...
 
     def transforms(self) -> Callable[[Any], Tensor]: ...
+    @property
+    def meta(self) -> MetaDict: ...
 
 if TYPE_CHECKING:
     class MaskRCNNResult(TypedDict):
