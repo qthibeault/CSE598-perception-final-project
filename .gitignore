@@ -1,5 +1,6 @@
 .task/
 .vscode/
+.venv/
 build/
 install/
 log/
