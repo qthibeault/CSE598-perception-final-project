@@ -39,6 +39,7 @@ class BBox:
 
     p1: Point = field()
     p2: Point = field()
+    n_frame: int = field()
 
     def __post_init__(self):
         if self.p1.x >= self.p2.x:
@@ -89,7 +90,7 @@ class BBox:
         cv2.rectangle(img, start, end, color, thickness)
 
     @classmethod
-    def from_center(cls: Type[Self], pt: Point, width: float, height: float) -> Self:
+    def from_center(cls: Type[Self], pt: Point, width: float, height: float, n_frame: int) -> Self:
         """Create a bounding box from a center-point."""
 
         x_dist = width / 2
@@ -98,7 +99,7 @@ class BBox:
         p1 = Point(pt.x - x_dist, pt.y - y_dist)
         p2 = Point(pt.x + x_dist, pt.y + y_dist)
 
-        return BBox(p1, p2)
+        return BBox(p1, p2, n_frame)
 
 
 def _random_color() -> tuple[int, int, int]:
@@ -122,6 +123,11 @@ class Object:
 
         prev_best = max(self.history, key=lambda b: b.area)
         return max(self.bbox, prev_best, key=lambda b: b.area)
+
+    @property
+    def bboxes(self) -> Iterable[BBox]:
+        yield self.bbox
+        yield from self.history
 
     def best_match(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
         scores = ((bbox, self.bbox.iou(bbox)) for bbox in bboxes)
