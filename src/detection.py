@@ -6,6 +6,8 @@ from random import randint
 from typing import Iterable, Type
 
 import cv2
+from numpy import float64, ndarray
+from numpy.typing import NDArray
 from typing_extensions import Self
 
 
@@ -19,6 +21,16 @@ class Point:
 
     def as_tuple(self, *, dtype: Type[float] | Type[int] = float) -> tuple[float, float]:
         return (dtype(self.x), dtype(self.y))
+
+    @classmethod
+    def from_ndarray(cls, arr: NDArray[float64]) -> Self:
+        if not isinstance(arr, ndarray):
+            raise TypeError("arr must be ndarray")
+
+        if arr.shape != (2,):
+            raise ValueError("arr must have shape (2,)")
+
+        return cls(float(arr[0]), float(arr[1]))
 
 
 @dataclass(frozen=True)
