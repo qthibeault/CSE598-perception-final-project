@@ -72,7 +72,7 @@ class LinearPredictor(Predictor):
 
     def __call__(self, target: BBox) -> BBox:
         pt = self.line.closest_point(target.center)
-        return BBox.from_center(pt, self.bbox.width, self.bbox.height)
+        return BBox.from_center(pt, self.bbox.width, self.bbox.height, target.n_frame)
 
     def best_match(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
         def _future_iou(bbox: BBox) -> float:
@@ -111,7 +111,7 @@ class NonlinearPredictor(Predictor):
         opt_result = optimize.minimize(objfn, np.array([0.0]))
         center = Point.from_ndarray(opt_result.x)
 
-        return BBox.from_center(center, self.bbox.width, self.bbox.height)
+        return BBox.from_center(center, self.bbox.width, self.bbox.height, target.n_frame)
 
     def best_match(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
         def _future_iou(bbox: BBox) -> float:

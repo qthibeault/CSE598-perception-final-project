@@ -32,7 +32,7 @@ def load_frames(capture: cv2.VideoCapture) -> Iterator[cv2.Mat]:
     capture.release()
 
 
-def _bbox_from_tensor(tensor: torch.Tensor) -> BBox:
+def _bbox_from_tensor(tensor: torch.Tensor, n_frame: int) -> BBox:
     """Create a bounding box from a torch tensor."""
 
     if tensor.ndim != 1:
@@ -44,12 +44,13 @@ def _bbox_from_tensor(tensor: torch.Tensor) -> BBox:
     p1 = Point(tensor[0].item(), tensor[1].item())
     p2 = Point(tensor[2].item(), tensor[3].item())
 
-    return BBox(p1, p2)
+    return BBox(p1, p2, n_frame)
 
 
 def detect(
     model: models.MaskRCNN,
     image: torch.Tensor,
+    n_frame: int,
     *,
     labels: list[str],
     allowed: list[str],
@@ -65,11 +66,11 @@ def detect(
     bbox_labels = [labels[int(label_idx.item())] for label_idx in result["labels"]]
 
     if len(allowed) == 0:
-        detections = {_bbox_from_tensor(box) for box in result["boxes"]}
+        detections = {_bbox_from_tensor(box, n_frame) for box in result["boxes"]}
         logger.debug(f"Labels in frame: {bbox_labels}")
     else:
         detections = {
-            _bbox_from_tensor(box)
+            _bbox_from_tensor(box, n_frame)
             for box, label in zip(result["boxes"], bbox_labels)
             if label in allowed
         }
@@ -163,7 +164,7 @@ def track(
             unassigned_objs2.add(obj)
         elif len(obj.history) > 0:
             predictor = predict(obj, method)
-            bbox, future_iou = predictor.best_match(bboxes)
+            bbox, future_iou = predictor.score_bboxes(bboxes)
 
             if future_iou > tol:
                 logger.debug(f"Object {obj.id} assigned detection from trajectory prediction")
@@ -278,7 +279,7 @@ def run(
     frames = load_frames(capture)
     first_frame = next(frames)
     transformed = transforms(Image.fromarray(first_frame))
-    detections = detect(model, transformed, labels=categories, allowed=labels)
+    detections = detect(model, transformed, 0, labels=categories, allowed=labels)
     track_results = [NewObject(box) for box in detections]
 
     draw(first_frame, track_results)
@@ -294,7 +295,7 @@ def run(
         logger.debug(f"Starting frame {idx} processing")
 
         transformed = transforms(Image.fromarray(frame))
-        detections = detect(model, transformed, labels=categories, allowed=labels)
+        detections = detect(model, transformed, idx, labels=categories, allowed=labels)
 
         if len(detections) > 0:
             objects = {result.obj for result in track_results}
