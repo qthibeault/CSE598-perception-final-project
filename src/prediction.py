@@ -4,6 +4,9 @@ from dataclasses import dataclass, field
 from typing import Protocol, Iterable, Type
 
 import cv2
+import numpy as np
+from numpy.typing import NDArray
+from scipy import interpolate, optimize
 from sympy import symbols, solve
 from typing_extensions import Self
 
@@ -92,3 +95,38 @@ class LinearPredictor(Predictor):
     def from_obj(cls, obj: Object) -> Self:
         line = PLine.from_points(obj.history[0].center, obj.bbox.center)
         return cls(line, obj.largest_bbox)
+
+
+@dataclass(frozen=True)
+class NonlinearPredictor(Predictor):
+    spline: interpolate.BSpline
+    bbox: BBox
+
+    def __call__(self, target: BBox) -> BBox:
+        def objfn(x: NDArray[np.float64]) -> float:
+            interp_val = self.spline(x)
+            fn_pt = Point.from_ndarray(interp_val)
+            return fn_pt.distance(target.center)
+
+        opt_result = optimize.minimize(objfn, np.array([0.0]))
+        center = Point.from_ndarray(opt_result.x)
+
+        return BBox.from_center(center, self.bbox.width, self.bbox.height)
+
+    def best_match(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
+        def _future_iou(bbox: BBox) -> float:
+            future_bbox = self(bbox)
+            return bbox.iou(future_bbox)
+
+        return max(((b, _future_iou(b)) for b in bboxes), key=lambda p: p[1])
+
+    def draw(self, img: cv2.Mat, color: tuple[int, int, int]) -> None:
+        pass
+
+    @classmethod
+    def from_obj(cls, obj: Object) -> Self:
+        centers = [obj.bbox.center.as_tuple()] + [b.center.as_tuple() for b in obj.history]
+        (t, c, k), *_ = interpolate.splprep(centers, k=1)
+        spline = interpolate.BSpline(t, c, k)
+
+        return cls(spline, obj.largest_bbox)
