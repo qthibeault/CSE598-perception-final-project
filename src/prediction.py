@@ -7,7 +7,7 @@ import cv2
 from sympy import symbols, solve
 from typing_extensions import Self
 
-from detection import BBox, Point
+from detection import BBox, Object, Point
 
 
 class Predictor(Protocol):
@@ -87,3 +87,8 @@ class LinearPredictor(Predictor):
         cv2.circle(img, p1, radius=0, color=(0, 0, 255), thickness=-1)
         cv2.circle(img, p2, radius=0, color=(0, 0, 255), thickness=-1)
         cv2.line(img, p1, p3, color=color, thickness=2)
+
+    @classmethod
+    def from_obj(cls, obj: Object) -> Self:
+        line = PLine.from_points(obj.history[0].center, obj.bbox.center)
+        return cls(line, obj.largest_bbox)
