@@ -16,4 +16,6 @@ suppress-none-returning = true
 include = ["src/**/*.py"]
 pythonVersion = "3.10"
 pythonPlatform = "Linux"
-stubPath = "./src/stubs"
+stubPath = "./stubs"
+venvPath = "."
+venv = "./.venv"
