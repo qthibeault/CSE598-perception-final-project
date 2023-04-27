@@ -14,10 +14,7 @@ from detection import BBox, Object, Point
 
 
 class Predictor(Protocol):
-    def __call__(self, target: BBox) -> BBox:
-        ...
-
-    def best_match(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
+    def score_bboxes(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
         ...
 
     def draw(self, img: cv2.Mat, color: tuple[int, int, int]) -> None:
@@ -70,13 +67,13 @@ class LinearPredictor(Predictor):
     line: PLine
     bbox: BBox
 
-    def __call__(self, target: BBox) -> BBox:
+    def nearest_bbox(self, target: BBox) -> BBox:
         pt = self.line.closest_point(target.center)
         return BBox.from_center(pt, self.bbox.width, self.bbox.height, target.n_frame)
 
-    def best_match(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
+    def score_bboxes(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
         def _future_iou(bbox: BBox) -> float:
-            future_bbox = self(bbox)
+            future_bbox = self.nearest_bbox(bbox)
             return self.bbox.iou(future_bbox)
 
         scores = ((bbox, _future_iou(bbox)) for bbox in bboxes)
@@ -102,7 +99,7 @@ class NonlinearPredictor(Predictor):
     spline: interpolate.BSpline
     bbox: BBox
 
-    def __call__(self, target: BBox) -> BBox:
+    def nearest_bbox(self, target: BBox) -> BBox:
         def objfn(x: NDArray[np.float64]) -> float:
             interp_val = self.spline(x)
             fn_pt = Point.from_ndarray(interp_val)
@@ -113,9 +110,9 @@ class NonlinearPredictor(Predictor):
 
         return BBox.from_center(center, self.bbox.width, self.bbox.height, target.n_frame)
 
-    def best_match(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
+    def score_bboxes(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
         def _future_iou(bbox: BBox) -> float:
-            future_bbox = self(bbox)
+            future_bbox = self.nearest_bbox(bbox)
             return bbox.iou(future_bbox)
 
         return max(((b, _future_iou(b)) for b in bboxes), key=lambda p: p[1])
