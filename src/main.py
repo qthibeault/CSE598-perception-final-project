@@ -450,7 +450,7 @@ def run(
     capture = cv2.VideoCapture(str(video))
 
     if record:
-        codec = cv2.VideoWriter_fourcc("M", "J", "P", "G")
+        codec = cv2.VideoWriter_fourcc("m", "p", "4", "v")
         fps = int(capture.get(cv2.CAP_PROP_FPS))
         width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
