@@ -79,17 +79,12 @@ def detect(
     return detections
 
 
-def _predict_linear(obj: Object) -> Predictor:
-    line = PLine.from_points(obj.history[0].center, obj.bbox.center)
-    return LinearPredictor(line, obj.largest_bbox)
-
-
 def predict(obj: Object, method: str) -> Predictor:
     if len(obj.history) == 0:
         raise ValueError("Cannot predict the trajectory of an object with no history")
 
     if method == "linear":
-        return _predict_linear(obj)
+        return LinearPredictor.from_obj(obj)
 
     raise ValueError(f"Unknown interpolation method {method}")
 
