@@ -122,7 +122,7 @@ class NonlinearPredictor(Predictor):
 
     @classmethod
     def from_obj(cls, obj: Object) -> Self:
-        centers = [obj.bbox.center.as_tuple()] + [b.center.as_tuple() for b in obj.history]
+        centers = [b.center.as_tuple() for b in obj.bboxes]
         (t, c, k), *_ = interpolate.splprep(centers, k=1)
         spline = interpolate.BSpline(t, c, k)
 
