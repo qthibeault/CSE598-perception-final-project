@@ -10,11 +10,9 @@ import click
 import cv2
 import torchvision.models.detection as models
 from PIL import Image
-from sympy import solve, symbols
 
 if TYPE_CHECKING:
     import torch
-    from typing_extensions import Self
 
 from detection import Point, BBox, Object
 from prediction import LinearPredictor, PLine, Predictor
