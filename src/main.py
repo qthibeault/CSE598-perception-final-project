@@ -10,6 +10,7 @@ import click
 import cv2
 import torchvision.models.detection as models
 from PIL import Image
+from scipy import stats
 
 if TYPE_CHECKING:
     import torch
@@ -77,12 +78,29 @@ def detect(
     return detections
 
 
+def _predict_linear(obj: Object) -> LinearPredictor:
+    line = PLine.from_points(obj.history[0].center, obj.bbox.center)
+    return LinearPredictor(line, obj.largest_bbox)
+
+
+def _predict_linear_regression(obj: Object) -> LinearPredictor:
+    centers = [obj.bbox.center.as_tuple()] + [b.center.as_tuple() for b in obj.history]
+    reg = stats.linregress(centers)
+    p1 = Point(0, reg.intercept)
+    p2 = Point(1, reg.intercept + reg.slope)
+    line = PLine.from_points(p1, p2)
+
+    return LinearPredictor(line, obj.largest_bbox)
+
+
 def predict(obj: Object, method: str) -> Predictor:
     if len(obj.history) == 0:
         raise ValueError("Cannot predict the trajectory of an object with no history")
 
     if method == "linear":
-        return LinearPredictor.from_obj(obj)
+        return _predict_linear(obj)
+    elif method == "reglinear":
+        return _predict_linear_regression(obj)
 
     raise ValueError(f"Unknown interpolation method {method}")
 
