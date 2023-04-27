@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from random import randint
 from signal import SIGINT, SIGTERM, signal
 from typing import TYPE_CHECKING, Any, Iterable, Iterator, Optional, Protocol, Type
 
@@ -18,125 +16,8 @@ if TYPE_CHECKING:
     import torch
     from typing_extensions import Self
 
-
-@dataclass(frozen=True)
-class Point:
-    x: float
-    y: float
-
-    def distance(self, other: Point) -> float:
-        return math.sqrt(math.pow(self.x - other.x, 2) + math.pow(self.y - other.y, 2))
-
-    def as_tuple(self, *, dtype: Type[float] | Type[int] = float) -> tuple[float, float]:
-        return (dtype(self.x), dtype(self.y))
-
-
-@dataclass(frozen=True)
-class BBox:
-    """The bounding box of an object."""
-
-    p1: Point = field()
-    p2: Point = field()
-
-    def __post_init__(self):
-        if self.p1.x >= self.p2.x:
-            raise ValueError("x0 must be strictly less than x1")
-
-        if self.p1.y >= self.p2.y:
-            raise ValueError("y0 must be strictly less than y1")
-
-    @property
-    def width(self) -> float:
-        return self.p2.x - self.p1.x
-
-    @property
-    def height(self) -> float:
-        return self.p2.y - self.p1.y
-
-    @property
-    def area(self) -> float:
-        return self.width * self.height
-
-    @property
-    def center(self) -> Point:
-        return Point(self.p1.x + self.width / 2, self.p1.y + self.height / 2)
-
-    def iou(self, other: BBox) -> float:
-        """Compute the Intersection-over-Union (IOU) score between two bounding boxes."""
-
-        x1 = max(self.p1.x, other.p1.x)
-        x2 = min(self.p2.x, other.p2.x)
-
-        y1 = max(self.p1.y, other.p1.y)
-        y2 = min(self.p2.y, other.p2.y)
-
-        # Handle the case where the two bounding boxes do not intersect
-        if x2 < x1 or y2 < y1:
-            return 0
-
-        inter_area = (x2 - x1) * (y2 - y1)
-        union_area = self.area + other.area - inter_area
-
-        return inter_area / union_area
-
-    def draw(self, img: cv2.Mat, color: tuple[int, int, int]):
-        start = self.p1.as_tuple(dtype=int)
-        end = self.p2.as_tuple(dtype=int)
-        thickness = 2
-
-        cv2.rectangle(img, start, end, color, thickness)
-
-    @classmethod
-    def from_center(cls: Type[Self], pt: Point, width: float, height: float) -> Self:
-        """Create a bounding box from a center-point."""
-
-        x_dist = width / 2
-        y_dist = height / 2
-
-        p1 = Point(pt.x - x_dist, pt.y - y_dist)
-        p2 = Point(pt.x + x_dist, pt.y + y_dist)
-
-        return BBox(p1, p2)
-
-
-def _random_color() -> tuple[int, int, int]:
-    return (randint(0, 255), randint(0, 255), randint(0, 255))
-
-
-@dataclass(frozen=True)
-class Object:
-    bbox: BBox = field(hash=False)
-    history: list[BBox] = field(default_factory=list, hash=False)
-    color: tuple[int, int, int] = field(default_factory=_random_color)
-
-    @property
-    def id(self) -> int:
-        return hash(self.color)
-
-    @property
-    def largest_bbox(self) -> BBox:
-        if len(self.history) == 0:
-            return self.bbox
-
-        prev_best = max(self.history, key=lambda b: b.area)
-        return max(self.bbox, prev_best, key=lambda b: b.area)
-
-    def best_match(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
-        scores = ((bbox, self.bbox.iou(bbox)) for bbox in bboxes)
-        return max(scores, key=lambda s: s[1])
-
-    def advance(self, bbox: BBox) -> Object:
-        return Object(bbox, [self.bbox] + self.history, self.color)
-
-    def draw(self, img: cv2.Mat):
-        self.bbox.draw(img, self.color)
-        cv2.circle(
-            img,
-            center=self.bbox.center.as_tuple(dtype=int),
-            radius=5,
-            color=self.color,
-            thickness=-1,
-        )
+from detection import Point, BBox, Object
+from prediction import LinearPredictor, PLine, Predictor
 
 
 def load_frames(capture: cv2.VideoCapture) -> Iterator[cv2.Mat]:
@@ -175,6 +56,7 @@ def detect(
     allowed: list[str],
 ) -> set[BBox]:
     """Create a set of bounding boxes from objects in an image."""
+
     logger = logging.getLogger("detection")
     logger.debug("Beginning detection")
 
@@ -195,85 +77,6 @@ def detect(
 
     logger.debug(f"Found {len(detections)} objects in frame")
     return detections
-
-
-class Predictor(Protocol):
-    def __call__(self, target: BBox) -> BBox:
-        ...
-
-    def best_match(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
-        ...
-
-    def draw(self, img: cv2.Mat, color: tuple[int, int, int]) -> None:
-        ...
-
-
-@dataclass(frozen=True)
-class PLine:
-    """Parametric line."""
-
-    delta_x: float = field()
-    delta_y: float = field()
-    bias: Point = field()
-
-    def __call__(self, t: float) -> Point:
-        return Point(self.delta_x * t + self.bias.x, self.delta_y * t + self.bias.y)
-
-    def closest_point(self, point: Point) -> Point:
-        """The point on the line closest to the given point.
-
-        We can compute any point P on a parametric line L using the formula
-        `(x0, y0) + (x2 - x1, y2 - y1) * t`. We can define the line from any point P on line L to
-        the target point Q as `P - Q`. The line from the closest point P* on line L to the target
-        point Q will be perpendicular. Therefore, the dot product between the line `P - Q` and the
-        line L will be 0. Given this, we can formulate the equation for the closest point P* in
-        terms of parametric variable `t` as
-        `(x0 + (x2 - x1) * t - Rx) * (x2 - x1) + (y0 + (y2 - y1) * t - Ry) * (y2 - y1) = 0`.
-        """
-
-        t = symbols("t")
-        x_eq = self.delta_x * t + self.bias.x
-        y_eq = self.delta_y * t + self.bias.y
-
-        x_perp_eq = x_eq - point.x
-        y_perp_eq = y_eq - point.y
-        dot_prod = x_perp_eq * self.delta_x + y_perp_eq * self.delta_y
-
-        solutions: list[dict[str, float]] = solve(dot_prod, dict=True)
-        assert len(solutions) == 1
-
-        return self(solutions[0][t])
-
-    @classmethod
-    def from_points(cls: Type[Self], p1: Point, p2: Point) -> Self:
-        return cls(p2.x - p1.x, p2.y - p1.y, p1)
-
-
-@dataclass(frozen=True)
-class LinearPredictor(Predictor):
-    line: PLine
-    bbox: BBox
-
-    def __call__(self, target: BBox) -> BBox:
-        pt = self.line.closest_point(target.center)
-        return BBox.from_center(pt, self.bbox.width, self.bbox.height)
-
-    def best_match(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
-        def _future_iou(bbox: BBox) -> float:
-            future_bbox = self(bbox)
-            return self.bbox.iou(future_bbox)
-
-        scores = ((bbox, _future_iou(bbox)) for bbox in bboxes)
-        return max(scores, key=lambda s: s[1])
-
-    def draw(self, img: cv2.Mat, color: tuple[int, int, int]):
-        p1 = self.line(0).as_tuple(dtype=int)
-        p2 = self.line(1).as_tuple(dtype=int)
-        p3 = self.line(100).as_tuple(dtype=int)
-
-        cv2.circle(img, p1, radius=0, color=(0, 0, 255), thickness=-1)
-        cv2.circle(img, p2, radius=0, color=(0, 0, 255), thickness=-1)
-        cv2.line(img, p1, p3, color=color, thickness=2)
 
 
 def _predict_linear(obj: Object) -> Predictor:
