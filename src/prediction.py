@@ -27,20 +27,28 @@ class Predictor(Protocol):
         ...
 
 
+@dataclass()
+class PLine:
+    slope: tuple[float, float]
+    point: Point
+
+    def __call__(self, t: float) -> Point:
+        return Point(self.slope[0] * t, self.slope[1] * t) + self.point
+
+
 class LinearPredictor(Predictor):
     def __init__(self, bbox: BBox, d1: Detection, d2: Detection):
+        upper = max(d1, d2, key=lambda d: d.frame)
+        lower = min(d1, d2, key=lambda d: d.frame)
+        slope = upper.bbox.center - lower.bbox.center
+
         self.bbox = bbox
-        self.d1 = d1
-        self.d2 = d2
-        self.interp = interpolate.interp1d(
-            x=np.array([d1.frame, d2.frame]),
-            y=np.array([d1.bbox.center.as_tuple(), d2.bbox.center.as_tuple()]),
-            kind="linear",
-            fill_value="extrapolate",
-        )
+        self.d1 = lower
+        self.d2 = upper
+        self.line = PLine(slope.as_tuple(), lower.bbox.center)
 
     def bbox_scores(self, frame: int, bboxes: Iterable[BBox]) -> Iterable[tuple[BBox, float]]:
-        center = Point.from_ndarray(self.interp(frame))
+        center = self.line(frame)
         future_bbox = self.bbox.recenter(center)
 
         for bbox in bboxes:
@@ -48,14 +56,14 @@ class LinearPredictor(Predictor):
 
     def draw(self, img: cv2.Mat, *, color: Color, from_frame: int = -1):
         c = color.as_tuple()
-        h, w, _ = img.shape
+        to_frame = 25
 
         p1 = self.d1.bbox.center.as_tuple(dtype=int)
         p2 = self.d2.bbox.center.as_tuple(dtype=int)
-        p3 = _interp_pt(self.interp, self.d2.frame + 100, height=h, width=w)
+        p3 = self.line(to_frame).as_tuple(dtype=int)
 
-        cv2.circle(img, p1, radius=0, color=c, thickness=-1)
-        cv2.circle(img, p2, radius=0, color=c, thickness=-1)
+        cv2.circle(img, p1, radius=4, color=c, thickness=-1)
+        cv2.circle(img, p2, radius=4, color=c, thickness=-1)
         cv2.line(img, p1, p3, color=c, thickness=2)
 
 
