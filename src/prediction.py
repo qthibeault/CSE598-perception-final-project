@@ -27,7 +27,7 @@ class LinearPredictor(Predictor):
         self.d2 = d2
         self.interp = interpolate.interp1d(
             x=np.array([d1.frame, d2.frame]),
-            y=np.array([d1.bbox.center, d2.bbox.center]),
+            y=np.array([d1.bbox.center.as_tuple(), d2.bbox.center.as_tuple()]),
             kind="linear",
             fill_value="extrapolate",
         )
@@ -96,7 +96,7 @@ class NonlinearPredictor(Predictor):
         self.history = list(history)
         self.interp = interpolate.interp1d(
             x=np.array([d.frame for d in history]),
-            y=np.array([d.bbox.center for d in history]),
+            y=np.array([d.bbox.center.as_tuple() for d in history]),
             kind="cubic",
             fill_value="extrapolate",
         )
