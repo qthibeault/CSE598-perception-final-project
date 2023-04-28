@@ -89,17 +89,17 @@ class BBox:
 
         cv2.rectangle(img, start, end, color, thickness)
 
-    @classmethod
-    def from_center(cls: Type[Self], pt: Point, width: float, height: float, n_frame: int) -> Self:
-        """Create a bounding box from a center-point."""
+    def recenter(self, new_center: Point, *, n_frame: int | None = None) -> Self:
+        x_dist = self.width / 2
+        y_dist = self.height / 2
 
-        x_dist = width / 2
-        y_dist = height / 2
+        p1 = Point(new_center.x - x_dist, new_center.y - y_dist)
+        p2 = Point(new_center.x + x_dist, new_center.y + y_dist)
 
-        p1 = Point(pt.x - x_dist, pt.y - y_dist)
-        p2 = Point(pt.x + x_dist, pt.y + y_dist)
-
-        return BBox(p1, p2, n_frame)
+        if n_frame:
+            return BBox(p1, p2, n_frame)
+        else:
+            return BBox(p1, p2, self.n_frame)
 
 
 def _random_color() -> tuple[int, int, int]:
