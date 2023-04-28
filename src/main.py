@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Iterator, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from signal import SIGINT, SIGTERM, signal
-from typing import TYPE_CHECKING, Any, Iterable, Iterator, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import click
 import cv2
@@ -16,7 +16,7 @@ from scipy import stats
 if TYPE_CHECKING:
     import torch
 
-from detection import BBox, Detection, Point, Tracker
+from detection import BBox, Color, Detection, Point, Tracker
 from prediction import Predictor
 
 
@@ -200,23 +200,19 @@ def track(
     return results
 
 
-def draw(frame: cv2.Mat, results: Iterable[TrackingResult]):
+def draw(frame: cv2.Mat, method: str, results: Iterable[TrackingResult]):
     for result in results:
-        obj = result.obj
+        tracker = result.tracker
 
         if isinstance(result, (ProxUpdate, PredUpdate)):
-            obj.draw(frame)
+            tracker.draw(frame)
 
-        if isinstance(result, PredUpdate):
-            result.predictor.draw(frame, obj.color)
+        if isinstance(result, Unchanged) and len(tracker.history) > 5:
+            gray = Color(220, 220, 220)
+            predictor = predict(tracker, method)
 
-        if isinstance(result, Unchanged) and len(obj.history) > 2:
-            gray = (220, 220, 220)
-            line = PLine.from_points(obj.history[0].center, obj.bbox.center)
-            predictor = LinearPredictor(line, obj.bbox)
-
-            obj.bbox.draw(frame, color=gray)
-            predictor.draw(frame, color=gray)
+            tracker.position.draw(frame, color=gray)
+            predictor.draw(frame, color=gray, from_frame=tracker.position.frame)
 
 
 def _handle_shutdown(video: cv2.VideoCapture, recording: Optional[cv2.VideoWriter]):
@@ -291,10 +287,10 @@ def run(
     frames = load_frames(capture)
     first_frame = next(frames)
     transformed = transforms(Image.fromarray(first_frame))
-    detections = detect(model, transformed, 0, labels=categories, allowed=labels)
-    track_results = [NewObject(box) for box in detections]
+    detections = detect(model, transformed, labels=categories, allowed=labels)
+    results = [NewObject(box, first_frame.index) for box in detections]
 
-    draw(first_frame, track_results)
+    draw(first_frame.image, method, results)
 
     if show:
         cv2.imshow("video", first_frame)
@@ -303,16 +299,17 @@ def run(
     if recording:
         recording.write(first_frame)
 
-    for idx, frame in enumerate(frames, start=1):
-        logger.debug(f"Starting frame {idx} processing")
+    for frame in frames:
+        logger.debug(f"Starting frame {frame.index} processing")
 
         transformed = transforms(Image.fromarray(frame))
-        detections = detect(model, transformed, idx, labels=categories, allowed=labels)
+        detections = detect(model, transformed, labels=categories, allowed=labels)
+        detections = list(detections)
 
         if len(detections) > 0:
-            objects = {result.obj for result in track_results}
-            track_results = track(objects, detections, method=method)
-            draw(frame, track_results)
+            trackers = [result.tracker for result in results]
+            results = track(trackers, detections, frame.index, method=method)
+            draw(frame.image, method, results)
 
         if show:
             cv2.imshow("video", frame)
@@ -321,8 +318,8 @@ def run(
         if recording:
             recording.write(frame)
 
-        if idx in captures:
-            cv2.imwrite(f"{video.stem}_frame{idx}.png", frame)
+        if frame.index in captures:
+            cv2.imwrite(f"{video.stem}_frame{frame.index}.png", frame.image)
 
     if recording:
         recording.release()
