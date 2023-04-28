@@ -45,7 +45,7 @@ class Point(Iterable[float]):
     def draw(self, img: cv2.Mat, color: Color):
         cv2.circle(
             img,
-            center=self.as_tuple(),
+            center=self.as_tuple(dtype=int),
             radius=5,
             color=color.as_tuple(),
             thickness=-1,
@@ -130,7 +130,7 @@ class BBox(Iterable[Point]):
         end = self.p2.as_tuple(dtype=int)
         thickness = 2
 
-        cv2.rectangle(img, start, end, color, thickness)
+        cv2.rectangle(img, start, end, color.as_tuple(), thickness)
 
 
 @dataclass(frozen=True, slots=True)
