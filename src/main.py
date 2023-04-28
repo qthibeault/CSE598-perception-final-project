@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from signal import SIGINT, SIGTERM, signal
-from typing import TYPE_CHECKING, Any, Iterable, Iterator, Optional, Protocol, Type
+from typing import TYPE_CHECKING, Any, Iterable, Iterator, Optional
 
 import click
 import cv2
