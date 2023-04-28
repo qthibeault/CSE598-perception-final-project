@@ -175,6 +175,10 @@ class Tracker:
     def last_frame(self) -> int:
         return self.position.frame
 
+    def score_bboxes(self, bboxes: Iterable[BBox]) -> Iterable[tuple[BBox, float]]:
+        for bbox in bboxes:
+            yield bbox, self.position.bbox.iou(bbox)
+
     def step(self, d: Detection) -> Tracker:
         return Tracker(d, [self.position] + self.history, self.color)
 
