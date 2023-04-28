@@ -97,8 +97,8 @@ class LinearRegressionPredictor(Predictor):
         if from_frame < 0:
             from_frame = min(d.frame for d in self.history)
 
-        p1 = self.frame_center(from_frame).as_tuple()
-        p2 = self.frame_center(to_frame).as_tuple()
+        p1 = self.frame_center(from_frame).as_tuple(dtype=int)
+        p2 = self.frame_center(to_frame).as_tuple(dtype=int)
 
         cv2.line(img, p1, p2, color=color.as_tuple(), thickness=2)
 
