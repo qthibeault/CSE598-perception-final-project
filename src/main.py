@@ -161,7 +161,7 @@ def track(
             unassigned2.add(tracker)
         else:
             predictor = predict(tracker, method)
-            bbox, future_iou = predictor.bbox_scores(frame, bboxes)
+            bbox, future_iou = max(predictor.bbox_scores(frame, bboxes), key=lambda s: s[1])
 
             if future_iou > tol:
                 det = Detection(bbox, frame)
