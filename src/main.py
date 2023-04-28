@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from signal import SIGINT, SIGTERM, signal
@@ -15,24 +16,32 @@ from scipy import stats
 if TYPE_CHECKING:
     import torch
 
-from detection import Point, BBox, Object
-from prediction import LinearPredictor, PLine, Predictor
+from detection import BBox, Detection, Point, Tracker
+from prediction import Predictor
 
 
-def load_frames(capture: cv2.VideoCapture) -> Iterator[cv2.Mat]:
+@dataclass(frozen=True, slots=True)
+class RawFrame:
+    image: cv2.Mat
+    index: int
+
+
+def load_frames(capture: cv2.VideoCapture) -> Iterator[RawFrame]:
     if not capture.isOpened():
         raise RuntimeError("Capture is no longer opened")
 
-    read_success, frame = capture.read()
+    index = 0
+    read_success, image = capture.read()
 
     while read_success:
-        yield frame
-        read_success, frame = capture.read()
+        yield RawFrame(image, index)
+        index += 1
+        read_success, image = capture.read()
 
     capture.release()
 
 
-def _bbox_from_tensor(tensor: torch.Tensor, n_frame: int) -> BBox:
+def _bbox_from_tensor(tensor: torch.Tensor) -> BBox:
     """Create a bounding box from a torch tensor."""
 
     if tensor.ndim != 1:
@@ -44,39 +53,38 @@ def _bbox_from_tensor(tensor: torch.Tensor, n_frame: int) -> BBox:
     p1 = Point(tensor[0].item(), tensor[1].item())
     p2 = Point(tensor[2].item(), tensor[3].item())
 
-    return BBox(p1, p2, n_frame)
+    return BBox(p1, p2)
 
 
 def detect(
-    model: models.MaskRCNN,
-    image: torch.Tensor,
-    n_frame: int,
-    *,
-    labels: list[str],
-    allowed: list[str],
-) -> set[BBox]:
+    model: models.MaskRCNN, img: torch.Tensor, *, labels: list[str], allowed: list[str]
+) -> Iterable[BBox]:
     """Create a set of bounding boxes from objects in an image."""
+
+    if len(allowed) > len(labels):
+        raise ValueError("Cannot allow more labels than provided")
 
     logger = logging.getLogger("detection")
     logger.debug("Beginning detection")
 
-    batch = image.unsqueeze(0)
+    batch = img.unsqueeze(0)
     results = model(batch)
     result = results[0]
     bbox_labels = [labels[int(label_idx.item())] for label_idx in result["labels"]]
 
     if len(allowed) == 0:
-        detections = {_bbox_from_tensor(box, n_frame) for box in result["boxes"]}
         logger.debug(f"Labels in frame: {bbox_labels}")
-    else:
-        detections = {
-            _bbox_from_tensor(box, n_frame)
-            for box, label in zip(result["boxes"], bbox_labels)
-            if label in allowed
-        }
 
-    logger.debug(f"Found {len(detections)} objects in frame")
-    return detections
+    for coords, obj_class in zip(result["boxes"], result["labels"]):
+        bbox = _bbox_from_tensor(coords)
+        obj_class = int(obj_class.item())
+        label = labels[obj_class]
+
+        if len(allowed) > 0 and label not in allowed:
+            continue
+
+        yield bbox
+        logger.debug(f"Detected {label}")
 
 
 def _predict_linear(obj: Object) -> LinearPredictor:
@@ -94,21 +102,21 @@ def _predict_linear_regression(obj: Object) -> LinearPredictor:
     return LinearPredictor(line, obj.largest_bbox)
 
 
-def predict(obj: Object, method: str) -> Predictor:
-    if len(obj.history) == 0:
+def predict(tracker: Tracker, method: str) -> Predictor:
+    if len(tracker.history) == 0:
         raise ValueError("Cannot predict the trajectory of an object with no history")
 
     if method == "linear":
-        return _predict_linear(obj)
+        return _predict_linear(tracker)
     elif method == "reglinear":
-        return _predict_linear_regression(obj)
+        return _predict_linear_regression(tracker)
 
     raise ValueError(f"Unknown interpolation method {method}")
 
 
 @dataclass(frozen=True)
 class TrackingResult:
-    obj: Object = field()
+    tracker: Tracker = field()
 
 
 @dataclass(frozen=True)
@@ -123,8 +131,8 @@ class PredUpdate(TrackingResult):
 
 @dataclass(init=False, frozen=True)
 class NewObject(TrackingResult):
-    def __init__(self, bbox: BBox):
-        super().__init__(Object(bbox))
+    def __init__(self, bbox: BBox, frame: int):
+        super().__init__(Tracker(Detection(bbox, frame)))
 
 
 @dataclass(frozen=True)
@@ -133,57 +141,61 @@ class Unchanged(TrackingResult):
 
 
 def track(
-    objs: set[Object],
-    bboxes: set[BBox],
-    *,
-    method: str,
-    tol: float = 0.8,
+    prev: list[Tracker], bboxes: Iterable[BBox], frame: int, *, method: str, tol: float = 0.8
 ) -> list[TrackingResult]:
+    bboxes = set(bboxes)
     logger = logging.getLogger("tracking")
-    logger.debug(f"Beginning tracking with {len(objs)} objects and {len(bboxes)} detections")
+    logger.debug(f"Beginning tracking with {len(prev)} objects and {len(bboxes)} detections")
 
     results: list[TrackingResult] = []
-    unassigned_objs = set()
+    unassigned = set()
 
-    for obj in objs:
+    # Try to associate detected bounding boxed via proximity
+    for tracker in prev:
         if len(bboxes) == 0:
-            unassigned_objs.add(obj)
+            unassigned.add(tracker)
         else:
-            bbox, iou = obj.best_match(bboxes)
+            bbox, iou = max(tracker.score_bboxes(bboxes), key=lambda s: s[1])
+
             if iou > tol:
-                logger.debug(f"Object {obj.id} assigned detection from IoU score")
+                det = Detection(bbox, frame)
+                updated = tracker.step(det)
+                results.append(ProxUpdate(updated))
                 bboxes.remove(bbox)
-                results.append(ProxUpdate(obj.advance(bbox)))
+                logger.debug(f"Object {hash(tracker)} assigned detection from IoU score")
             else:
-                unassigned_objs.add(obj)
+                unassigned.add(tracker)
 
-    unassigned_objs2 = set()
+    unassigned2 = set()
 
-    for obj in unassigned_objs:
-        if len(bboxes) == 0:
-            unassigned_objs2.add(obj)
-        elif len(obj.history) > 0:
-            predictor = predict(obj, method)
-            bbox, future_iou = predictor.score_bboxes(bboxes)
+    # Try to associate detected bounding boxed via future proximity
+    for tracker in unassigned:
+        if len(bboxes) == 0 or len(tracker.history) == 0:
+            unassigned2.add(tracker)
+        else:
+            predictor = predict(tracker, method)
+            bbox, future_iou = predictor.bbox_scores(bboxes)
 
             if future_iou > tol:
-                logger.debug(f"Object {obj.id} assigned detection from trajectory prediction")
+                det = Detection(bbox, frame)
+                updated = tracker.step(det)
+                logger.debug(
+                    f"Object {hash(tracker)} assigned detection from trajectory prediction"
+                )
                 bboxes.remove(bbox)
-                results.append(PredUpdate(obj.advance(bbox), predictor))
+                results.append(PredUpdate(updated, predictor))
             else:
-                unassigned_objs2.add(obj)
-        else:
-            unassigned_objs2.add(obj)
+                unassigned2.add(tracker)
 
-    logger.debug(f"{len(unassigned_objs2)} objects not updated")
+    logger.debug(f"{len(unassigned2)} objects not updated")
 
-    for obj in unassigned_objs:
+    for obj in unassigned2:
         results.append(Unchanged(obj))
 
     logger.debug(f"{len(bboxes)} detections not assigned to any object")
 
     for bbox in bboxes:
-        results.append(NewObject(bbox))
+        results.append(NewObject(bbox, frame))
 
     return results
 
