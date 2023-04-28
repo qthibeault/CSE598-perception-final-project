@@ -13,7 +13,7 @@ from detection import BBox, Color, Detection, Point
 
 
 class Predictor(Protocol):
-    def bbox_scores(self, frame: int, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
+    def bbox_scores(self, frame: int, bboxes: Iterable[BBox]) -> Iterable[tuple[BBox, float]]:
         ...
 
     def draw(self, img: cv2.Mat, *, color: Color, from_frame: int = -1) -> None:
