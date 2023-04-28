@@ -280,7 +280,7 @@ def run(
     draw(first_frame.image, method, results)
 
     if show:
-        cv2.imshow("video", first_frame)
+        cv2.imshow("video", first_frame.image)
         cv2.waitKey(1)
 
     if recording:
@@ -299,11 +299,11 @@ def run(
             draw(frame.image, method, results)
 
         if show:
-            cv2.imshow("video", frame)
+            cv2.imshow("video", frame.image)
             cv2.waitKey(1)
 
         if recording:
-            recording.write(frame)
+            recording.write(frame.image)
 
         if frame.index in captures:
             cv2.imwrite(f"{video.stem}_frame{frame.index}.png", frame.image)
