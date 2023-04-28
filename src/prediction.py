@@ -10,15 +10,6 @@ from scipy import interpolate, stats
 from detection import BBox, Color, Detection, Point
 
 
-def _interp_pt(
-    interp: interpolate.interp1d, frame: int, *, height: float, width: float
-) -> tuple[int, int]:
-    pt = interp(frame)
-    x = min(pt[0], width)
-    y = min(pt[1], height)
-    return (int(x), int(y))
-
-
 class Predictor(Protocol):
     def bbox_scores(self, frame: int, bboxes: Iterable[BBox]) -> Iterable[tuple[BBox, float]]:
         ...
@@ -40,15 +31,20 @@ class LinearPredictor(Predictor):
     def __init__(self, bbox: BBox, d1: Detection, d2: Detection):
         upper = max(d1, d2, key=lambda d: d.frame)
         lower = min(d1, d2, key=lambda d: d.frame)
-        slope = upper.bbox.center - lower.bbox.center
 
         self.bbox = bbox
         self.d1 = lower
         self.d2 = upper
-        self.line = PLine(slope.as_tuple(), lower.bbox.center)
+        self.spline = interpolate.make_interp_spline(
+            x=[lower.frame, upper.frame],
+            y=[lower.bbox.center.as_tuple(), upper.bbox.center.as_tuple()],
+            k=1,
+            # bc_type=("clamped", "clamped"),
+        )
 
     def bbox_scores(self, frame: int, bboxes: Iterable[BBox]) -> Iterable[tuple[BBox, float]]:
-        center = self.line(frame)
+        pt = self.spline(frame)
+        center = Point.from_ndarray(pt)
         future_bbox = self.bbox.recenter(center)
 
         for bbox in bboxes:
@@ -56,11 +52,12 @@ class LinearPredictor(Predictor):
 
     def draw(self, img: cv2.Mat, *, color: Color, from_frame: int = -1):
         c = color.as_tuple()
-        to_frame = 25
+        to_frame = self.d2.frame + 25
 
         p1 = self.d1.bbox.center.as_tuple(dtype=int)
         p2 = self.d2.bbox.center.as_tuple(dtype=int)
-        p3 = self.line(to_frame).as_tuple(dtype=int)
+        p3 = self.spline(to_frame).astype(int)
+        p3 = (p3[0], p3[1])
 
         cv2.circle(img, p1, radius=4, color=c, thickness=-1)
         cv2.circle(img, p2, radius=4, color=c, thickness=-1)
@@ -106,34 +103,56 @@ class LinearRegressionPredictor(Predictor):
 class NonlinearPredictor(Predictor):
     def __init__(self, bbox: BBox, history: Iterable[Detection]):
         self.bbox = bbox
-        self.history = list(history)
-        self.interp = interpolate.interp1d(
-            x=np.array([d.frame for d in history]),
-            y=np.array([d.bbox.center.as_tuple() for d in history]),
-            kind="cubic",
-            fill_value="extrapolate",
+        self.history = sorted(history, key=lambda d: d.frame)
+
+        if len(self.history) == 2:
+            k = 1
+        elif len(self.history) == 3:
+            k = 2
+        elif len(self.history) > 3:
+            k = 3
+        else:
+            raise ValueError("history must have >= 2 elements")
+
+        self.x_spline = interpolate.make_interp_spline(
+            x=[d.frame for d in self.history],
+            y=[d.bbox.center.x for d in self.history],
+            k=k,
+        )
+        self.y_spline = interpolate.make_interp_spline(
+            x=[d.frame for d in self.history],
+            y=[d.bbox.center.y for d in self.history],
+            k=k,
         )
 
     def bbox_scores(self, frame: int, bboxes: Iterable[BBox]) -> Iterable[tuple[BBox, float]]:
-        center = Point.from_ndarray(self.interp(frame))
+        pt_x = self.x_spline(frame)
+        pt_y = self.y_spline(frame)
+        center = Point(float(pt_x), float(pt_y))
         future_bbox = self.bbox.recenter(center)
 
         for bbox in bboxes:
             yield bbox, future_bbox.iou(bbox)
 
     def draw(self, img: cv2.Mat, *, color: Color, from_frame: int = -1):
-        last_frame = max(d.frame for d in self.history)
-        to_frame = last_frame + 100
+        last_frame = self.history[-1].frame
+        to_frame = last_frame + 10
 
         if from_frame > last_frame:
             raise ValueError(f"from_frame cannot be greater than the last frame {last_frame}")
 
         if from_frame < 0:
-            from_frame = min(d.frame for d in self.history)
+            from_frame = self.history[0].frame
 
         h, w, _ = img.shape
-        n_pts = 20 + len(self.history) * 5
-        frame_pts = np.linspace(from_frame, to_frame, n_pts)
-        line_pts = [_interp_pt(self.interp, pt, height=h, width=w) for pt in frame_pts]
+        n_pts = 30
 
-        cv2.polylines(img, line_pts, isClosed=False, color=color.as_tuple(), thickness=2)
+        for d in self.history:
+            d.bbox.center.draw(img, color=color)
+
+        frame_pts = np.linspace(from_frame, to_frame, n_pts)
+        spline_pts = ((self.x_spline(pt), self.y_spline(pt)) for pt in frame_pts)
+        line_pts = np.array([(int(pt[0]), int(pt[1])) for pt in spline_pts])
+        line_pts = line_pts.clip((0, 0), (w, h))
+
+        cv2.polylines(img, [line_pts], isClosed=False, color=color.as_tuple(), thickness=2)
