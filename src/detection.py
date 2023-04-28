@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from math import sqrt
 from random import randint
-from typing import Iterable, Type
+from typing import Type
 
 import cv2
 from numpy import float64, ndarray
@@ -11,16 +12,44 @@ from numpy.typing import NDArray
 from typing_extensions import Self
 
 
-@dataclass(frozen=True)
-class Point:
+@dataclass(frozen=True, slots=True)
+class Color:
+    R: int = field()
+    G: int = field()
+    B: int = field()
+
+    def as_tuple(self) -> tuple[int, int, int]:
+        return self.R, self.G, self.B
+
+    def __hash__(self) -> int:
+        return hash((self.R, self.G, self.B))
+
+
+@dataclass(frozen=True, slots=True)
+class Point(Iterable[float]):
     x: float
     y: float
+
+    def __hash__(self) -> int:
+        return hash((self.x, self.y))
+
+    def __iter__(self) -> Iterator[float]:
+        return iter((self.x, self.y))
 
     def distance(self, other: Point) -> float:
         return sqrt((self.x - other.x) ** 2 + (self.y - other.y) ** 2)
 
     def as_tuple(self, *, dtype: Type[float] | Type[int] = float) -> tuple[float, float]:
         return (dtype(self.x), dtype(self.y))
+
+    def draw(self, img: cv2.Mat, color: Color):
+        cv2.circle(
+            img,
+            center=self.as_tuple(),
+            radius=5,
+            color=color.as_tuple(),
+            thickness=-1,
+        )
 
     @classmethod
     def from_ndarray(cls, arr: NDArray[float64]) -> Self:
@@ -33,13 +62,12 @@ class Point:
         return cls(float(arr[0]), float(arr[1]))
 
 
-@dataclass(frozen=True)
-class BBox:
+@dataclass(frozen=True, slots=True)
+class BBox(Iterable[Point]):
     """The bounding box of an object."""
 
     p1: Point = field()
     p2: Point = field()
-    n_frame: int = field()
 
     def __post_init__(self):
         if self.p1.x >= self.p2.x:
@@ -47,6 +75,12 @@ class BBox:
 
         if self.p1.y >= self.p2.y:
             raise ValueError("y0 must be strictly less than y1")
+
+    def __hash__(self) -> int:
+        return hash((self.p1, self.p2))
+
+    def __iter__(self) -> Iterator[Point]:
+        return iter((self.p1, self.p2))
 
     @property
     def width(self) -> float:
@@ -82,66 +116,68 @@ class BBox:
 
         return inter_area / union_area
 
-    def draw(self, img: cv2.Mat, color: tuple[int, int, int]):
-        start = self.p1.as_tuple(dtype=int)
-        end = self.p2.as_tuple(dtype=int)
-        thickness = 2
-
-        cv2.rectangle(img, start, end, color, thickness)
-
-    def recenter(self, new_center: Point, *, n_frame: int | None = None) -> Self:
+    def recenter(self, new_center: Point) -> Self:
         x_dist = self.width / 2
         y_dist = self.height / 2
 
         p1 = Point(new_center.x - x_dist, new_center.y - y_dist)
         p2 = Point(new_center.x + x_dist, new_center.y + y_dist)
 
-        if n_frame:
-            return BBox(p1, p2, n_frame)
-        else:
-            return BBox(p1, p2, self.n_frame)
+        return BBox(p1, p2)
+
+    def draw(self, img: cv2.Mat, color: Color):
+        start = self.p1.as_tuple(dtype=int)
+        end = self.p2.as_tuple(dtype=int)
+        thickness = 2
+
+        cv2.rectangle(img, start, end, color, thickness)
 
 
-def _random_color() -> tuple[int, int, int]:
-    return (randint(0, 255), randint(0, 255), randint(0, 255))
+@dataclass(frozen=True, slots=True)
+class Detection:
+    bbox: BBox
+    frame: int
+
+    def __hash__(self) -> int:
+        return hash((self.bbox, self.frame))
+
+    def draw(self, img: cv2.Mat, color: Color):
+        self.bbox.draw(img, color)
 
 
-@dataclass(frozen=True)
-class Object:
-    bbox: BBox = field(hash=False)
-    history: list[BBox] = field(default_factory=list, hash=False)
-    color: tuple[int, int, int] = field(default_factory=_random_color)
+def _random_color() -> Color:
+    return Color(randint(0, 255), randint(0, 255), randint(0, 255))
 
-    @property
-    def id(self) -> int:
+
+@dataclass(frozen=True, slots=True)
+class Tracker:
+    position: Detection = field()
+    history: list[Detection] = field(default_factory=list)
+    color: Color = field(default_factory=_random_color)
+
+    def __hash__(self) -> int:
         return hash(self.color)
 
     @property
-    def largest_bbox(self) -> BBox:
-        if len(self.history) == 0:
-            return self.bbox
-
-        prev_best = max(self.history, key=lambda b: b.area)
-        return max(self.bbox, prev_best, key=lambda b: b.area)
+    def bboxes(self) -> Iterable[BBox]:
+        yield self.position.bbox
+        yield from [d.bbox for d in self.history]
 
     @property
-    def bboxes(self) -> Iterable[BBox]:
-        yield self.bbox
-        yield from self.history
+    def containing_bbox(self) -> BBox:
+        if len(self.history) == 0:
+            return self.position.bbox
 
-    def best_match(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
-        scores = ((bbox, self.bbox.iou(bbox)) for bbox in bboxes)
-        return max(scores, key=lambda s: s[1])
+        prev_best = max((d.bbox for d in self.history), key=lambda b: b.area)
+        return max(self.position.bbox, prev_best, key=lambda b: b.area)
 
-    def advance(self, bbox: BBox) -> Object:
-        return Object(bbox, [self.bbox] + self.history, self.color)
+    @property
+    def last_frame(self) -> int:
+        return self.position.frame
+
+    def step(self, d: Detection) -> Tracker:
+        return Tracker(d, [self.position] + self.history, self.color)
 
     def draw(self, img: cv2.Mat):
-        self.bbox.draw(img, self.color)
-        cv2.circle(
-            img,
-            center=self.bbox.center.as_tuple(dtype=int),
-            radius=5,
-            color=self.color,
-            thickness=-1,
-        )
+        self.position.bbox.draw(img, self.color)
+        self.position.bbox.center.draw(img, self.color)
