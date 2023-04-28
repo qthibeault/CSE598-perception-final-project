@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     import torch
 
 from detection import BBox, Color, Detection, Point, Tracker
-from prediction import Predictor
+from prediction import Predictor, LinearPredictor, LinearRegressionPredictor, NonlinearPredictor
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,29 +87,16 @@ def detect(
         logger.debug(f"Detected {label}")
 
 
-def _predict_linear(obj: Object) -> LinearPredictor:
-    line = PLine.from_points(obj.history[0].center, obj.bbox.center)
-    return LinearPredictor(line, obj.largest_bbox)
-
-
-def _predict_linear_regression(obj: Object) -> LinearPredictor:
-    centers = [obj.bbox.center.as_tuple()] + [b.center.as_tuple() for b in obj.history]
-    reg = stats.linregress(centers)
-    p1 = Point(0, reg.intercept)
-    p2 = Point(1, reg.intercept + reg.slope)
-    line = PLine.from_points(p1, p2)
-
-    return LinearPredictor(line, obj.largest_bbox)
-
-
 def predict(tracker: Tracker, method: str) -> Predictor:
     if len(tracker.history) == 0:
         raise ValueError("Cannot predict the trajectory of an object with no history")
 
     if method == "linear":
-        return _predict_linear(tracker)
-    elif method == "reglinear":
-        return _predict_linear_regression(tracker)
+        return LinearPredictor(tracker.containing_bbox, tracker.position, tracker.history[0])
+    elif method == "linreg":
+        return LinearRegressionPredictor(tracker.containing_bbox, tracker.detections)
+    elif method == "nonlinear":
+        return NonlinearPredictor(tracker.containing_bbox, tracker.detections)
 
     raise ValueError(f"Unknown interpolation method {method}")
 
@@ -174,7 +161,7 @@ def track(
             unassigned2.add(tracker)
         else:
             predictor = predict(tracker, method)
-            bbox, future_iou = predictor.bbox_scores(bboxes)
+            bbox, future_iou = predictor.bbox_scores(frame, bboxes)
 
             if future_iou > tol:
                 det = Detection(bbox, frame)
@@ -242,7 +229,7 @@ def _handle_shutdown(video: cv2.VideoCapture, recording: Optional[cv2.VideoWrite
 )
 @click.option(
     "--method",
-    type=click.Choice(["linear", "pchip", "spline"]),
+    type=click.Choice(["linear", "linreg", "nonlinear"]),
     default="linear",
     show_default=True,
     help="The interpolation method to use",
