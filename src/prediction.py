@@ -50,8 +50,8 @@ class LinearPredictor(Predictor):
         c = color.as_tuple()
         h, w, _ = img.shape
 
-        p1 = _interp_pt(self.interp, self.d1.frame, height=h, width=w)
-        p2 = _interp_pt(self.interp, self.d2.frame, height=h, width=w)
+        p1 = self.d1.bbox.center.as_tuple()
+        p2 = self.d2.bbox.center.as_tuple()
         p3 = _interp_pt(self.interp, self.d2.frame + 100, height=h, width=w)
 
         cv2.circle(img, p1, radius=0, color=c, thickness=-1)
