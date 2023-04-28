@@ -40,6 +40,8 @@ class LinearPredictor(Predictor):
             yield bbox, future_bbox.iou(bbox)
 
     def draw(self, img: cv2.Mat, *, color: Color, from_frame: int = -1):
+        c = color.as_tuple()
+
         p1 = self.interp(self.d1.frame)
         p1 = (int(p1[0]), int(p1[1]))
 
@@ -49,9 +51,9 @@ class LinearPredictor(Predictor):
         p3 = self.interp(self.d2.frame + 100)
         p3 = (int(p3[0]), int(p3[1]))
 
-        cv2.circle(img, p1, radius=0, color=color, thickness=-1)
-        cv2.circle(img, p2, radius=0, color=color, thickness=-1)
-        cv2.line(img, p1, p3, color=color, thickness=2)
+        cv2.circle(img, p1, radius=0, color=c, thickness=-1)
+        cv2.circle(img, p2, radius=0, color=c, thickness=-1)
+        cv2.line(img, p1, p3, color=c, thickness=2)
 
 
 class LinearRegressionPredictor(Predictor):
@@ -87,7 +89,7 @@ class LinearRegressionPredictor(Predictor):
         p1 = self.frame_center(from_frame).as_tuple()
         p2 = self.frame_center(to_frame).as_tuple()
 
-        cv2.line(img, p1, p2, color=color, thickness=2)
+        cv2.line(img, p1, p2, color=color.as_tuple(), thickness=2)
 
 
 class NonlinearPredictor(Predictor):
@@ -123,4 +125,4 @@ class NonlinearPredictor(Predictor):
         line_pts = [self.interp(pt) for pt in frame_pts]
         line_pts = [(int(pt[0]), int(pt[1])) for pt in line_pts]
 
-        cv2.polylines(img, line_pts, isClosed=False, color=color, thickness=2)
+        cv2.polylines(img, line_pts, isClosed=False, color=color.as_tuple(), thickness=2)
