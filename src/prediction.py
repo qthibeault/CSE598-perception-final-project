@@ -1,129 +1,126 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Protocol, Iterable, Type
+from dataclasses import dataclass
+from typing import Protocol, Iterable
 
 import cv2
 import numpy as np
 from numpy.typing import NDArray
-from scipy import interpolate, optimize
-from sympy import symbols, solve
+from scipy import interpolate, optimize, stats
 from typing_extensions import Self
 
-from detection import BBox, Object, Point
+from detection import BBox, Color, Detection, Point
 
 
 class Predictor(Protocol):
-    def score_bboxes(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
+    def bbox_scores(self, frame: int, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
         ...
 
-    def draw(self, img: cv2.Mat, color: tuple[int, int, int]) -> None:
+    def draw(self, img: cv2.Mat, *, color: Color, from_frame: int = -1) -> None:
         ...
 
 
-@dataclass(frozen=True)
-class PLine:
-    """Parametric line."""
-
-    delta_x: float = field()
-    delta_y: float = field()
-    bias: Point = field()
-
-    def __call__(self, t: float) -> Point:
-        return Point(self.delta_x * t + self.bias.x, self.delta_y * t + self.bias.y)
-
-    def closest_point(self, point: Point) -> Point:
-        """The point on the line closest to the given point.
-
-        We can compute any point P on a parametric line L using the formula
-        `(x0, y0) + (x2 - x1, y2 - y1) * t`. We can define the line from any point P on line L to
-        the target point Q as `P - Q`. The line from the closest point P* on line L to the target
-        point Q will be perpendicular. Therefore, the dot product between the line `P - Q` and the
-        line L will be 0. Given this, we can formulate the equation for the closest point P* in
-        terms of parametric variable `t` as
-        `(x0 + (x2 - x1) * t - Rx) * (x2 - x1) + (y0 + (y2 - y1) * t - Ry) * (y2 - y1) = 0`.
-        """
-
-        t = symbols("t")
-        x_eq = self.delta_x * t + self.bias.x
-        y_eq = self.delta_y * t + self.bias.y
-
-        x_perp_eq = x_eq - point.x
-        y_perp_eq = y_eq - point.y
-        dot_prod = x_perp_eq * self.delta_x + y_perp_eq * self.delta_y
-
-        solutions: list[dict[str, float]] = solve(dot_prod, dict=True)
-        assert len(solutions) == 1
-
-        return self(solutions[0][t])
-
-    @classmethod
-    def from_points(cls: Type[Self], p1: Point, p2: Point) -> Self:
-        return cls(p2.x - p1.x, p2.y - p1.y, p1)
-
-
-@dataclass(frozen=True)
 class LinearPredictor(Predictor):
-    line: PLine
-    bbox: BBox
+    def __init__(self, bbox: BBox, d1: Detection, d2: Detection):
+        self.bbox = bbox
+        self.d1 = d1
+        self.d2 = d2
+        self.interp = interpolate.interp1d(
+            x=np.array([d1.frame, d2.frame]),
+            y=np.array([d1.bbox.center, d2.bbox.center]),
+            kind="linear",
+            fill_value="extrapolate",
+        )
 
-    def nearest_bbox(self, target: BBox) -> BBox:
-        pt = self.line.closest_point(target.center)
-        return self.bbox.recenter(pt, n_frame=target.n_frame)
+    def bbox_scores(self, frame: int, bboxes: Iterable[BBox]) -> Iterable[tuple[BBox, float]]:
+        center = Point.from_ndarray(self.interp(frame))
+        future_bbox = self.bbox.recenter(center)
 
-    def score_bboxes(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
-        def _future_iou(bbox: BBox) -> float:
-            future_bbox = self.nearest_bbox(bbox)
-            return self.bbox.iou(future_bbox)
+        for bbox in bboxes:
+            yield bbox, future_bbox.iou(bbox)
 
-        scores = ((bbox, _future_iou(bbox)) for bbox in bboxes)
-        return max(scores, key=lambda s: s[1])
+    def draw(self, img: cv2.Mat, *, color: Color, from_frame: int = -1):
+        p1 = self.interp(self.d1.frame)
+        p1 = (float(p1[0]), float(p1[1]))
 
-    def draw(self, img: cv2.Mat, color: tuple[int, int, int]):
-        p1 = self.line(0).as_tuple(dtype=int)
-        p2 = self.line(1).as_tuple(dtype=int)
-        p3 = self.line(100).as_tuple(dtype=int)
+        p2 = self.interp(self.d2.frame)
+        p2 = (float(p2[0]), float(p2[1]))
 
-        cv2.circle(img, p1, radius=0, color=(0, 0, 255), thickness=-1)
-        cv2.circle(img, p2, radius=0, color=(0, 0, 255), thickness=-1)
+        p3 = self.interp(self.d2.frame + 100)
+        p3 = (float(p3[0]), float(p3[1]))
+
+        cv2.circle(img, p1, radius=0, color=color, thickness=-1)
+        cv2.circle(img, p2, radius=0, color=color, thickness=-1)
         cv2.line(img, p1, p3, color=color, thickness=2)
 
-    @classmethod
-    def from_obj(cls, obj: Object) -> Self:
-        line = PLine.from_points(obj.history[0].center, obj.bbox.center)
-        return cls(line, obj.largest_bbox)
+
+class LinearRegressionPredictor(Predictor):
+    def __init__(self, bbox: BBox, history: Iterable[Detection]):
+        self.bbox = bbox
+        self.history = list(history)
+        self.x_interp = stats.linregress([(d.frame, d.bbox.center.x) for d in self.history])
+        self.y_interp = stats.linregress([(d.frame, d.bbox.center.y) for d in self.history])
+
+    def frame_center(self, frame: int) -> Point:
+        x = self.x_interp.slope * frame + self.x_interp.intercept
+        y = self.y_interp.slope * frame + self.y_interp.intercept
+
+        return Point(x, y)
+
+    def bbox_scores(self, frame: int, bboxes: Iterable[BBox]) -> Iterable[tuple[BBox, float]]:
+        center = self.frame_center(frame)
+        future_bbox = self.bbox.recenter(center)
+
+        for bbox in bboxes:
+            yield bbox, future_bbox.iou(bbox)
+
+    def draw(self, img: cv2.Mat, *, color: Color, from_frame: int = -1):
+        last_frame = max(d.frame for d in self.history)
+        to_frame = last_frame + 100
+
+        if from_frame > last_frame:
+            raise ValueError(f"from_frame cannot be greater than the last frame {last_frame}")
+
+        if from_frame < 0:
+            from_frame = min(d.frame for d in self.history)
+
+        p1 = self.frame_center(from_frame).as_tuple()
+        p2 = self.frame_center(to_frame).as_tuple()
+
+        cv2.line(img, p1, p2, color=color, thickness=2)
 
 
-@dataclass(frozen=True)
 class NonlinearPredictor(Predictor):
-    spline: interpolate.BSpline
-    bbox: BBox
+    def __init__(self, bbox: BBox, history: Iterable[Detection]):
+        self.bbox = bbox
+        self.history = list(history)
+        self.interp = interpolate.interp1d(
+            x=np.array([d.frame for d in history]),
+            y=np.array([d.bbox.center for d in history]),
+            kind="cubic",
+            fill_value="extrapolate",
+        )
 
-    def nearest_bbox(self, target: BBox) -> BBox:
-        def objfn(x: NDArray[np.float64]) -> float:
-            interp_val = self.spline(x)
-            fn_pt = Point.from_ndarray(interp_val)
-            return fn_pt.distance(target.center)
+    def bbox_scores(self, frame: int, bboxes: Iterable[BBox]) -> Iterable[tuple[BBox, float]]:
+        center = Point.from_ndarray(self.interp(frame))
+        future_bbox = self.bbox.recenter(center)
 
-        opt_result = optimize.minimize(objfn, np.array([0.0]))
-        center = Point.from_ndarray(opt_result.x)
+        for bbox in bboxes:
+            yield bbox, future_bbox.iou(bbox)
 
-        return self.bbox.recenter(center, n_frame=target.n_frame)
+    def draw(self, img: cv2.Mat, *, color: Color, from_frame: int = -1):
+        last_frame = max(d.frame for d in self.history)
+        to_frame = last_frame + 100
 
-    def score_bboxes(self, bboxes: Iterable[BBox]) -> tuple[BBox, float]:
-        def _future_iou(bbox: BBox) -> float:
-            future_bbox = self.nearest_bbox(bbox)
-            return bbox.iou(future_bbox)
+        if from_frame > last_frame:
+            raise ValueError(f"from_frame cannot be greater than the last frame {last_frame}")
 
-        return max(((b, _future_iou(b)) for b in bboxes), key=lambda p: p[1])
+        if from_frame < 0:
+            from_frame = min(d.frame for d in self.history)
 
-    def draw(self, img: cv2.Mat, color: tuple[int, int, int]) -> None:
-        pass
+        n_pts = 20 + len(self.history) * 5
+        frame_pts = np.linspace(from_frame, to_frame, n_pts)
+        line_pts = [self.interp(pt) for pt in frame_pts]
+        line_pts = [(int(pt[0]), int(pt[1])) for pt in line_pts]
 
-    @classmethod
-    def from_obj(cls, obj: Object) -> Self:
-        centers = [b.center.as_tuple() for b in obj.bboxes]
-        (t, c, k), *_ = interpolate.splprep(centers, k=1)
-        spline = interpolate.BSpline(t, c, k)
-
-        return cls(spline, obj.largest_bbox)
+        cv2.polylines(img, line_pts, isClosed=False, color=color, thickness=2)
