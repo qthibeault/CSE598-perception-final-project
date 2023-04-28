@@ -192,7 +192,8 @@ class Tracker:
         if len(self.history) == 0:
             return self.position.bbox
 
-        prev_best = max((d.bbox for d in self.history), key=lambda b: b.area)
+        boxes = (d.bbox for d in self.history)
+        prev_best = max(boxes, key=lambda b: b.area)
         return max(self.position.bbox, prev_best, key=lambda b: b.area)
 
     @property
