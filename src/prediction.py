@@ -41,13 +41,13 @@ class LinearPredictor(Predictor):
 
     def draw(self, img: cv2.Mat, *, color: Color, from_frame: int = -1):
         p1 = self.interp(self.d1.frame)
-        p1 = (float(p1[0]), float(p1[1]))
+        p1 = (int(p1[0]), int(p1[1]))
 
         p2 = self.interp(self.d2.frame)
-        p2 = (float(p2[0]), float(p2[1]))
+        p2 = (int(p2[0]), int(p2[1]))
 
         p3 = self.interp(self.d2.frame + 100)
-        p3 = (float(p3[0]), float(p3[1]))
+        p3 = (int(p3[0]), int(p3[1]))
 
         cv2.circle(img, p1, radius=0, color=color, thickness=-1)
         cv2.circle(img, p2, radius=0, color=color, thickness=-1)
