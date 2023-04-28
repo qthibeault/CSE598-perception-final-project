@@ -182,6 +182,9 @@ class Tracker:
     def step(self, d: Detection) -> Tracker:
         return Tracker(d, [self.position] + self.history, self.color)
 
-    def draw(self, img: cv2.Mat):
-        self.position.bbox.draw(img, self.color)
-        self.position.bbox.center.draw(img, self.color)
+    def draw(self, img: cv2.Mat, *, color: Color | None = None):
+        if color is None:
+            color = self.color
+
+        self.position.bbox.draw(img, color)
+        self.position.bbox.center.draw(img, color)
