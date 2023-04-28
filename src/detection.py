@@ -36,6 +36,24 @@ class Point(Iterable[float]):
     def __iter__(self) -> Iterator[float]:
         return iter((self.x, self.y))
 
+    def __sub__(self, other: object) -> Point:
+        if isinstance(other, Point):
+            return Point(self.x - other.x, self.y - other.y)
+
+        if isinstance(other, (tuple, list)) and len(other) == 2:
+            return Point(self.x - other[0], self.y - other[1])
+
+        return NotImplemented
+
+    def __add__(self, other: object) -> Point:
+        if isinstance(other, Point):
+            return Point(self.x + other.x, self.y + other.y)
+
+        if isinstance(other, (tuple, list)) and len(other) == 2:
+            return Point(self.x + other[0], self.y + other[1])
+
+        return NotImplemented
+
     def distance(self, other: Point) -> float:
         return sqrt((self.x - other.x) ** 2 + (self.y - other.y) ** 2)
 
