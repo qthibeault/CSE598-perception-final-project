@@ -24,6 +24,20 @@ def splprep(
     str,
 ]: ...
 
+class interp1d:
+    def __init__(
+        self,
+        x: ArrayLike,
+        y: ArrayLike,
+        kind: str | int = ...,
+        axis: int = ...,
+        copy: bool = ...,
+        bounds_error: bool = ...,
+        fill_value: ArrayLike | tuple[ArrayLike, ArrayLike] | Literal["extrapolate"] = ...,
+        assume_sorted: bool = ...,
+    ): ...
+    def __call__(self, x: ArrayLike) -> NDArray[float64]: ...
+
 class BSpline:
     def __init__(
         self,
@@ -40,3 +54,23 @@ class BSpline:
         extrapolate: bool | Literal["periodic"] | None = ...,
     ) -> NDArray[float64]: ...
     def derivative(self, nu: int | None = ...) -> BSpline: ...
+
+class RectBivariateSpline:
+    def __init__(
+        self,
+        x: ArrayLike,
+        y: ArrayLike,
+        z: ArrayLike,
+        bbox: ArrayLike | None = ...,
+        kx: int | None = ...,
+        ky: int | None = ...,
+        s: float | None = ...,
+    ): ...
+    def __call__(
+        self,
+        x: ArrayLike,
+        y: ArrayLike,
+        dx: int = ...,
+        dy: int = ...,
+        grid: bool = ...,
+    ) -> NDArray[float64]: ...
