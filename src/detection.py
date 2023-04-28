@@ -160,9 +160,14 @@ class Tracker:
         return hash(self.color)
 
     @property
+    def detections(self) -> Iterable[Detection]:
+        yield self.position
+        yield from self.history
+
+    @property
     def bboxes(self) -> Iterable[BBox]:
-        yield self.position.bbox
-        yield from [d.bbox for d in self.history]
+        for detection in self.detections:
+            yield detection.bbox
 
     @property
     def containing_bbox(self) -> BBox:
