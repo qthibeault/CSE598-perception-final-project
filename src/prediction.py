@@ -5,11 +5,18 @@ from typing import Protocol, Iterable
 
 import cv2
 import numpy as np
-from numpy.typing import NDArray
-from scipy import interpolate, optimize, stats
-from typing_extensions import Self
+from scipy import interpolate, stats
 
 from detection import BBox, Color, Detection, Point
+
+
+def _interp_pt(
+    interp: interpolate.interp1d, frame: int, *, height: float, width: float
+) -> tuple[int, int]:
+    pt = interp(frame)
+    x = min(pt[0], width)
+    y = min(pt[1], height)
+    return (int(x), int(y))
 
 
 class Predictor(Protocol):
@@ -41,15 +48,11 @@ class LinearPredictor(Predictor):
 
     def draw(self, img: cv2.Mat, *, color: Color, from_frame: int = -1):
         c = color.as_tuple()
+        h, w, _ = img.shape
 
-        p1 = self.interp(self.d1.frame)
-        p1 = (int(p1[0]), int(p1[1]))
-
-        p2 = self.interp(self.d2.frame)
-        p2 = (int(p2[0]), int(p2[1]))
-
-        p3 = self.interp(self.d2.frame + 100)
-        p3 = (int(p3[0]), int(p3[1]))
+        p1 = _interp_pt(self.interp, self.d1.frame, height=h, width=w)
+        p2 = _interp_pt(self.interp, self.d2.frame, height=h, width=w)
+        p3 = _interp_pt(self.interp, self.d2.frame + 100, height=h, width=w)
 
         cv2.circle(img, p1, radius=0, color=c, thickness=-1)
         cv2.circle(img, p2, radius=0, color=c, thickness=-1)
@@ -120,9 +123,9 @@ class NonlinearPredictor(Predictor):
         if from_frame < 0:
             from_frame = min(d.frame for d in self.history)
 
+        h, w, _ = img.shape
         n_pts = 20 + len(self.history) * 5
         frame_pts = np.linspace(from_frame, to_frame, n_pts)
-        line_pts = [self.interp(pt) for pt in frame_pts]
-        line_pts = [(int(pt[0]), int(pt[1])) for pt in line_pts]
+        line_pts = [_interp_pt(self.interp, pt, height=h, width=w) for pt in frame_pts]
 
         cv2.polylines(img, line_pts, isClosed=False, color=color.as_tuple(), thickness=2)
