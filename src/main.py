@@ -273,7 +273,7 @@ def run(
 
     frames = load_frames(capture)
     first_frame = next(frames)
-    transformed = transforms(Image.fromarray(first_frame))
+    transformed = transforms(Image.fromarray(first_frame.image))
     detections = detect(model, transformed, labels=categories, allowed=labels)
     results = [NewObject(box, first_frame.index) for box in detections]
 
@@ -289,7 +289,7 @@ def run(
     for frame in frames:
         logger.debug(f"Starting frame {frame.index} processing")
 
-        transformed = transforms(Image.fromarray(frame))
+        transformed = transforms(Image.fromarray(frame.image))
         detections = detect(model, transformed, labels=categories, allowed=labels)
         detections = list(detections)
 
