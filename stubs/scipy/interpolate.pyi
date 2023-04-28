@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional, TYPE_CHECKING
 
 from numpy import float64
 from numpy.typing import ArrayLike, NDArray
@@ -74,3 +74,18 @@ class RectBivariateSpline:
         dy: int = ...,
         grid: bool = ...,
     ) -> NDArray[float64]: ...
+
+if TYPE_CHECKING:
+    DerivativeOrder = tuple[float, float]
+    BCAlias = Literal["clamped", "natural", "not-a-knot", "periodic"]
+    BCType = tuple[DerivativeOrder | BCAlias, DerivativeOrder | BCAlias]
+
+def make_interp_spline(
+    x: ArrayLike,
+    y: ArrayLike,
+    k: int = ...,
+    t: ArrayLike = ...,
+    bc_type: Optional[BCType] = ...,
+    axis: int = ...,
+    check_finite: bool = ...,
+) -> BSpline: ...
