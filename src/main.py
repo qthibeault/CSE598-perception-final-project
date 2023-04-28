@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Iterable
+import sqlite3
+from collections.abc import Callable, Iterator, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from signal import SIGINT, SIGTERM, signal
@@ -202,7 +203,88 @@ def draw(frame: cv2.Mat, method: str, results: Iterable[TrackingResult]):
             predictor.draw(frame, color=gray, from_frame=tracker.position.frame)
 
 
-def _handle_shutdown(video: cv2.VideoCapture, recording: Optional[cv2.VideoWriter]):
+class Cache:
+    def __init__(self, filename: str):
+        cache_dir = Path(".cache")
+        cache_dir.mkdir(exist_ok=True)
+
+        self.filename = filename
+        self.con = sqlite3.connect(cache_dir / "detections.db")
+
+        cursor = self.con.cursor()
+        cursor.execute(
+            "CREATE TABLE IF NOT EXISTS videos(id INTEGER PRIMARY KEY, filename TEXT UNIQUE NOT NULL)"
+        )
+        cursor.execute(
+            """CREATE TABLE IF NOT EXISTS frames(
+            id INTEGER PRIMARY KEY,
+            video_id INTEGER NOT NULL,
+            frame_index INTEGER NOT NULL,
+            FOREIGN KEY (video_id) REFERENCES videos(id))"""
+        )
+        cursor.execute(
+            """CREATE TABLE IF NOT EXISTS detections(
+            id INTEGER PRIMARY KEY,
+            frame_id INTEGER NOT NULL,
+            x1 NUMERIC NOT NULL,
+            y1 NUMERIC NOT NULL,
+            x2 NUMERIC NOT NULL,
+            y2 NUMERIC NOT NULL,
+            FOREIGN KEY (frame_id) REFERENCES frames(id))"""
+        )
+
+        cursor.execute("SELECT id FROM videos where filename = ?", (filename,))
+        result = cursor.fetchone()
+
+        if not result:
+            cursor.execute("INSERT INTO videos(filename) VALUES (?)", (filename,))
+            cursor.connection.commit()
+            cursor.execute("SELECT id FROM videos WHERE filename = ?", (filename,))
+            result = cursor.fetchone()
+
+        self.video_id = result[0]
+        cursor.close()
+
+    def frame_detections(self, frame_index: int) -> list[BBox] | None:
+        cursor = self.con.cursor()
+        cursor.execute(
+            """SELECT id FROM frames WHERE video_id = ? AND frame_index = ?""",
+            (self.video_id, frame_index),
+        )
+        result = cursor.fetchone()
+
+        if result is None:
+            return None
+
+        cursor.execute("SELECT x1, y1, x2, y2 FROM detections WHERE frame_id = ?", result)
+        result = cursor.fetchmany()
+        cursor.close()
+
+        return [BBox(Point(x1, y1), Point(x2, y2)) for x1, y1, x2, y2 in result]
+
+    def insert_detections(self, frame_index: int, detections: Iterable[BBox]):
+        cursor = self.con.cursor()
+        cursor.execute(
+            "INSERT INTO frames(video_id, frame_index) VALUES (?, ?)", (self.video_id, frame_index)
+        )
+        cursor.connection.commit()
+        cursor.execute(
+            "SELECT id FROM frames WHERE video_id = ? AND frame_index = ?",
+            (self.video_id, frame_index),
+        )
+        (frame_id,) = cursor.fetchone()
+        data = [(frame_id, b.p1.x, b.p1.y, b.p2.x, b.p2.y) for b in detections]
+
+        cursor.executemany(
+            "INSERT INTO detections(frame_id, x1, y1, x2, y2) VALUES (?, ?, ?, ?, ?)", data
+        )
+        cursor.connection.commit()
+
+    def close(self) -> None:
+        self.con.close()
+
+
+def _handle_shutdown(video: cv2.VideoCapture, recording: Optional[cv2.VideoWriter], cache: Cache):
     def handler(*args: Any):
         logger = logging.getLogger("exit")
         logger.debug("SIGINT detected, stopping processing")
@@ -213,6 +295,7 @@ def _handle_shutdown(video: cv2.VideoCapture, recording: Optional[cv2.VideoWrite
         if recording and recording.isOpened():
             recording.release()
 
+        cache.close()
         cv2.destroyAllWindows()
         exit(0)
 
@@ -257,6 +340,7 @@ def run(
     logging.basicConfig(level=logging.DEBUG if debug else logging.WARN)
     logger.debug("Starting frame 0 processing")
 
+    cache = Cache(str(video.resolve()))
     capture = cv2.VideoCapture(str(video))
 
     if record:
@@ -268,14 +352,20 @@ def run(
     else:
         recording = None
 
-    shutdown = _handle_shutdown(capture, recording)
+    shutdown = _handle_shutdown(capture, recording, cache)
     signal(SIGINT, shutdown)
     signal(SIGTERM, shutdown)
 
     frames = load_frames(capture)
     first_frame = next(frames)
-    transformed = transforms(Image.fromarray(first_frame.image))
-    detections = detect(model, transformed, labels=categories, allowed=labels)
+    detections = cache.frame_detections(first_frame.index)
+
+    if detections is None:
+        transformed = transforms(Image.fromarray(first_frame.image))
+        detections = detect(model, transformed, labels=categories, allowed=labels)
+        detections = list(detections)
+        cache.insert_detections(first_frame.index, detections)
+
     results = [NewObject(box, first_frame.index) for box in detections]
 
     draw(first_frame.image, method, results)
@@ -290,13 +380,16 @@ def run(
     for frame in frames:
         logger.debug(f"Starting frame {frame.index} processing")
 
-        transformed = transforms(Image.fromarray(frame.image))
-        detections = detect(model, transformed, labels=categories, allowed=labels)
-        detections = list(detections)
+        detections = cache.frame_detections(frame.index)
 
-        if len(detections) > 0:
-            trackers = [result.tracker for result in results]
-            results = track(trackers, detections, frame.index, method=method)
+        if detections is None:
+            transformed = transforms(Image.fromarray(frame.image))
+            detections = detect(model, transformed, labels=categories, allowed=labels)
+            detections = list(detections)
+            cache.insert_detections(frame.index, detections)
+
+        trackers = [result.tracker for result in results]
+        results = track(trackers, detections, frame.index, method=method)
 
         draw(frame.image, method, results)
 
