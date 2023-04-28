@@ -197,9 +197,9 @@ def draw(frame: cv2.Mat, method: str, results: Iterable[TrackingResult]):
 
         if isinstance(result, Unchanged) and len(tracker.history) > 5:
             gray = Color(220, 220, 220)
-            predictor = predict(tracker, method)
-
             tracker.position.draw(frame, color=gray)
+
+            predictor = predict(tracker, method)
             predictor.draw(frame, color=gray, from_frame=tracker.position.frame)
 
 
