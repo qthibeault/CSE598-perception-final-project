@@ -296,7 +296,8 @@ def run(
         if len(detections) > 0:
             trackers = [result.tracker for result in results]
             results = track(trackers, detections, frame.index, method=method)
-            draw(frame.image, method, results)
+
+        draw(frame.image, method, results)
 
         if show:
             cv2.imshow("video", frame.image)
