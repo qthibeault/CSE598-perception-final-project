@@ -268,8 +268,9 @@ def run(
     else:
         recording = None
 
-    signal(SIGINT, _handle_shutdown(capture, recording))
-    signal(SIGTERM, _handle_shutdown(capture, recording))
+    shutdown = _handle_shutdown(capture, recording)
+    signal(SIGINT, shutdown)
+    signal(SIGTERM, shutdown)
 
     frames = load_frames(capture)
     first_frame = next(frames)
@@ -309,10 +310,7 @@ def run(
         if frame.index in captures:
             cv2.imwrite(f"{video.stem}_frame{frame.index}.png", frame.image)
 
-    if recording:
-        recording.release()
-
-    cv2.destroyAllWindows()
+    shutdown()
 
 
 if __name__ == "__main__":
