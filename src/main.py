@@ -92,7 +92,7 @@ def predict(tracker: Tracker, method: str) -> Predictor:
         raise ValueError("Cannot predict the trajectory of an object with no history")
 
     if method == "linear":
-        return LinearPredictor(tracker.containing_bbox, tracker.position, tracker.history[0])
+        return LinearPredictor(tracker.containing_bbox, tracker.history[0], tracker.position)
     elif method == "linreg":
         return LinearRegressionPredictor(tracker.containing_bbox, tracker.detections)
     elif method == "nonlinear":
