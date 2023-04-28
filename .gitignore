@@ -1,9 +1,11 @@
 .task/
 .vscode/
 .venv/
+.cache/
 build/
 install/
 log/
 *.egg-info/
+*.pyc
 recordings/*
 !recordings/baseline.mp4
